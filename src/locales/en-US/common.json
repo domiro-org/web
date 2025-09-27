@@ -1,1 +1,6 @@
-{}
+{
+  "app.title": "Domiro",
+  "language.select": "Select language",
+  "action.check": "Check availability",
+  "input.placeholder": "One domain per line, e.g. example.com"
+}
