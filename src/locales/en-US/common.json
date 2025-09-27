@@ -2,5 +2,13 @@
   "app.title": "Domiro",
   "language.select": "Select language",
   "action.check": "Check availability",
-  "input.placeholder": "One domain per line, e.g. example.com"
+  "input.placeholder": "One domain per line, e.g. example.com",
+  "input.helper": "We will deduplicate and validate automatically",
+  "parse.summary": "{{count}} domains parsed successfully",
+  "parse.empty": "No valid domains detected",
+  "parse.errors.title": "Unable to parse these entries ({{count}})",
+  "parse.errors.invalid-format": "Invalid format",
+  "parse.errors.invalid-length": "Length exceeds the limit",
+  "parse.errors.no-tld": "Missing top-level domain",
+  "parse.errors.duplicate": "Duplicate entry"
 }

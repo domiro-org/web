@@ -2,5 +2,13 @@
   "app.title": "Domiro",
   "language.select": "选择语言",
   "action.check": "开始筛选",
-  "input.placeholder": "每行一个域名，例如 example.com"
+  "input.placeholder": "每行一个域名，例如 example.com",
+  "input.helper": "会自动去重并校验格式",
+  "parse.summary": "成功解析 {{count}} 个域名",
+  "parse.empty": "没有检测到有效域名",
+  "parse.errors.title": "以下条目无法解析 ({{count}})",
+  "parse.errors.invalid-format": "格式不正确",
+  "parse.errors.invalid-length": "超出长度限制",
+  "parse.errors.no-tld": "缺少顶级域名",
+  "parse.errors.duplicate": "重复条目"
 }
