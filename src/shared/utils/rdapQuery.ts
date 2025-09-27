@@ -1,22 +1,19 @@
+import type { RdapCheckResult } from "../types";
+
 const RDAP_BASE_ENDPOINT = "https://rdap.org/domain/";
+
+interface RdapQueryOptions {
+  /** 是否通过代理请求 RDAP */
+  useProxy?: boolean;
+}
 
 interface RdapSuccessResponse {
   objectClassName?: string;
   status?: string[];
 }
 
-export interface RdapCheckResult {
-  status: number;
-  available: boolean | null;
-  unsupported?: boolean;
-  detailKey: string;
-  detailParams?: Record<string, string | number>;
-}
-
 /**
- * 解析 Retry-After 头部，返回重试等待秒数。
- * @param value HTTP 头部 Retry-After 的原始值
- * @returns 解析出的秒数，解析失败返回 undefined
+ * 解析 Retry-After 头部返回等待秒数。
  */
 function parseRetryAfter(value: string | null): number | undefined {
   if (!value) {
@@ -24,7 +21,6 @@ function parseRetryAfter(value: string | null): number | undefined {
   }
 
   const numericValue = Number(value);
-
   if (!Number.isNaN(numericValue)) {
     return numericValue;
   }
@@ -41,13 +37,15 @@ function parseRetryAfter(value: string | null): number | undefined {
 }
 
 /**
- * 调用公共 RDAP 聚合端点获取域名的注册状态信息。
- * @param domain ASCII 形态的域名
- * @returns 描述 RDAP 查询结果的对象
+ * 调用 RDAP.org 查询域名注册状态并返回标准化结果。
+ * @param domain ASCII 形式的域名
+ * @returns RDAP 查询结果结构
  */
-export async function runRdapCheck(domain: string): Promise<RdapCheckResult> {
-  // RDAP.org 聚合了绝大多数 gTLD 的查询入口，M1 再补完整路由
-  const url = `${RDAP_BASE_ENDPOINT}${encodeURIComponent(domain)}`;
+export async function runRdapQuery(
+  domain: string,
+  options?: RdapQueryOptions
+): Promise<RdapCheckResult> {
+  const url = resolveEndpoint(domain, options?.useProxy);
 
   const response = await fetch(url, {
     headers: { Accept: "application/rdap+json, application/json" }
@@ -110,4 +108,19 @@ export async function runRdapCheck(domain: string): Promise<RdapCheckResult> {
     detailKey: "rdap.detail.http-error",
     detailParams: { status: response.status }
   } satisfies RdapCheckResult;
+}
+
+/**
+ * 根据设置决定 RDAP 请求的实际端点。
+ */
+function resolveEndpoint(domain: string, useProxy?: boolean): string {
+  if (useProxy) {
+    const proxyBase = import.meta.env.VITE_API_PROXY;
+    if (proxyBase) {
+      const normalized = proxyBase.endsWith("/") ? proxyBase.slice(0, -1) : proxyBase;
+      return `${normalized}/rdap?domain=${encodeURIComponent(domain)}`;
+    }
+  }
+
+  return `${RDAP_BASE_ENDPOINT}${encodeURIComponent(domain)}`;
 }

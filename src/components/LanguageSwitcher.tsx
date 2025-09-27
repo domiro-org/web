@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n/i18n";
 
 const languages = [
-  { code: "zh-Hans", label: "简体中文" },
-  { code: "en-US", label: "English (US)" }
+  { code: "zh-Hans", labelKey: "language.zhHans" },
+  { code: "en-US", labelKey: "language.enUS" }
 ];
 
 export type LanguageSwitcherProps = Omit<
@@ -34,7 +34,7 @@ export default function LanguageSwitcher(props: LanguageSwitcherProps) {
     >
       {languages.map((lang) => (
         <MenuItem key={lang.code} value={lang.code}>
-          {lang.label}
+          {t(lang.labelKey)}
         </MenuItem>
       ))}
     </TextField>

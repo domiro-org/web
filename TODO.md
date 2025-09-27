@@ -102,6 +102,7 @@
 
   - 浏览器里直连 43 端口不可行 → 通过同上代理（HTTP → TCP 转发），或用公共 HTTP-WHOIS API（需留意限速/合规）。
   - 只对明确无 RDAP 的 ccTLD 使用，解析文本提取「No match」「Not found」等关键字（按 TLD 定制）。
+  - 导出页提供的「WHOIS 兜底」开关待与实际代理逻辑串联。
 
 - **Worker 通信**：
 
