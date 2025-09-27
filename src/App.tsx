@@ -7,10 +7,19 @@ import {
   Alert,
   List,
   ListItem,
-  ListItemText
+  ListItemText,
+  LinearProgress,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from "@mui/material";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import LanguageSwitcher from "./components/LanguageSwitcher";
 import type {
@@ -18,6 +27,8 @@ import type {
   DomainParseResult
 } from "./utils/parseDomains";
 import { parseDomains } from "./utils/parseDomains";
+import type { DomainCheckRow, Verdict, CheckState } from "./utils/domainCheckTypes";
+import { runDnsPrecheck } from "./utils/dnsPrecheck";
 
 const ERROR_MESSAGE_KEYS: Record<DomainParseErrorCode, string> = {
   "invalid-format": "parse.errors.invalid-format",
@@ -26,16 +37,61 @@ const ERROR_MESSAGE_KEYS: Record<DomainParseErrorCode, string> = {
   duplicate: "parse.errors.duplicate"
 };
 
+const DNS_STATUS_KEYS: Record<DomainCheckRow["dns"], string> = {
+  "has-ns": "dns.status.has-ns",
+  "no-ns": "dns.status.no-ns",
+  nxdomain: "dns.status.nxdomain",
+  error: "dns.status.error"
+};
+
+const VERDICT_KEYS: Record<Verdict, string> = {
+  available: "verdict.available",
+  taken: "verdict.taken",
+  undetermined: "verdict.undetermined",
+  "rdap-unsupported": "verdict.rdap-unsupported"
+};
+
 export default function App() {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState("");
   const [parseResult, setParseResult] = useState<DomainParseResult | null>(
     null
   );
+  const [checkState, setCheckState] = useState<CheckState>("idle");
+  const [rows, setRows] = useState<DomainCheckRow[]>([]);
+  const runIdRef = useRef(0);
 
   // 点击按钮后执行解析流程
-  const handleCheck = () => {
-    setParseResult(parseDomains(inputValue));
+  const handleCheck = async () => {
+    const result = parseDomains(inputValue);
+    setParseResult(result);
+    setRows([]);
+
+    if (result.domains.length === 0) {
+      setCheckState("idle");
+      return;
+    }
+
+    const currentRunId = runIdRef.current + 1;
+    runIdRef.current = currentRunId;
+    setCheckState("dns-checking");
+
+    try {
+      const dnsRows = await runDnsChecks(result.domains, t);
+
+      // 若存在更晚的请求已经生效，则丢弃当前结果
+      if (runIdRef.current !== currentRunId) {
+        return;
+      }
+
+      setRows(dnsRows);
+      setCheckState("done");
+    } catch (error) {
+      console.error("DNS precheck failed", error);
+      if (runIdRef.current === currentRunId) {
+        setCheckState("error");
+      }
+    }
   };
 
   return (
@@ -65,7 +121,7 @@ export default function App() {
       </Button>
 
       {parseResult && (
-        <Stack spacing={2} sx={{ mt: 3 }}>
+        <Stack spacing={3} sx={{ mt: 3 }}>
           {parseResult.domains.length > 0 ? (
             <Stack spacing={1}>
               <Alert severity="success">
@@ -109,8 +165,191 @@ export default function App() {
               </Stack>
             </Alert>
           )}
+
+          {parseResult.domains.length > 0 && (
+            <Stack spacing={2}>
+              {checkState === "dns-checking" && (
+                <Alert severity="info">
+                  <Stack spacing={1}>
+                    <Typography variant="body2">
+                      {t("dns.checking")}
+                    </Typography>
+                    <LinearProgress />
+                  </Stack>
+                </Alert>
+              )}
+
+              {checkState === "error" && (
+                <Alert severity="error">{t("dns.error.general")}</Alert>
+              )}
+
+              {checkState === "done" && rows.length > 0 && (
+                <Alert severity="success">
+                  {t("dns.done", { count: rows.length })}
+                </Alert>
+              )}
+
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small" aria-label={t("dns.table.aria") ?? "DNS"}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>{t("dns.table.domain")}</TableCell>
+                      <TableCell>{t("dns.table.dns")}</TableCell>
+                      <TableCell>{t("dns.table.verdict")}</TableCell>
+                      <TableCell>{t("dns.table.detail")}</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4}>
+                          <Typography variant="body2" color="text.secondary">
+                            {checkState === "dns-checking"
+                              ? t("dns.table.pending")
+                              : t("dns.table.empty")}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>
+                            <Stack spacing={0.5}>
+                              <Typography variant="body2">
+                                {row.domain}
+                              </Typography>
+                              {row.ascii !== row.domain && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  {row.ascii}
+                                </Typography>
+                              )}
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Typography
+                              variant="body2"
+                              sx={{ color: getDnsColor(row.dns) }}
+                            >
+                              {t(DNS_STATUS_KEYS[row.dns])}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography
+                              variant="body2"
+                              sx={{ color: getVerdictColor(row.verdict) }}
+                            >
+                              {t(VERDICT_KEYS[row.verdict])}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {row.detail ? (
+                              <Typography variant="body2">{row.detail}</Typography>
+                            ) : (
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                {t("dns.table.detail-empty")}
+                              </Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Stack>
+          )}
         </Stack>
       )}
     </Container>
   );
+}
+
+function getDnsColor(status: DomainCheckRow["dns"]) {
+  switch (status) {
+    case "has-ns":
+      return "success.main";
+    case "no-ns":
+    case "nxdomain":
+      return "warning.main";
+    case "error":
+    default:
+      return "error.main";
+  }
+}
+
+function getVerdictColor(verdict: Verdict) {
+  switch (verdict) {
+    case "taken":
+      return "success.main";
+    case "available":
+      return "warning.main";
+    case "rdap-unsupported":
+      return "text.secondary";
+    case "undetermined":
+    default:
+      return "text.primary";
+  }
+}
+
+async function runDnsChecks(
+  domains: DomainParseResult["domains"],
+  t: TFunction
+): Promise<DomainCheckRow[]> {
+  // 并发依赖 Promise.all，在 M1 再补并发控制
+  const results = await Promise.all(
+    domains.map(async (domain) => {
+      try {
+        const dnsResult = await runDnsPrecheck(domain.ascii);
+        const providerLabel = dnsResult.provider
+          ? t(`dns.provider.${dnsResult.provider}`)
+          : t("dns.provider.unknown");
+        const detail = dnsResult.detail
+          ? t(dnsResult.detail)
+          : t("dns.detail.source", { provider: providerLabel });
+
+        return {
+          id: domain.id,
+          domain: domain.domain,
+          ascii: domain.ascii,
+          tld: domain.tld,
+          dns: dnsResult.status,
+          rdap: null,
+          verdict: deriveVerdict(dnsResult.status),
+          detail
+        } satisfies DomainCheckRow;
+      } catch (error) {
+        console.error("runDnsPrecheck error", error);
+        return {
+          id: domain.id,
+          domain: domain.domain,
+          ascii: domain.ascii,
+          tld: domain.tld,
+          dns: "error",
+          rdap: null,
+          verdict: "undetermined",
+          detail: t("dns.detail.unknown-error")
+        } satisfies DomainCheckRow;
+      }
+    })
+  );
+
+  return results;
+}
+
+function deriveVerdict(status: DomainCheckRow["dns"]): Verdict {
+  if (status === "has-ns") {
+    return "taken";
+  }
+
+  if (status === "error") {
+    return "undetermined";
+  }
+
+  return "available";
 }
