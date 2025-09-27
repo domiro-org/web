@@ -1,6 +1,8 @@
 import { Container, Typography, Button, TextField } from "@mui/material";
 import { useTranslation } from "react-i18next";
 
+import LanguageSwitcher from "./components/LanguageSwitcher";
+
 export default function App() {
   const { t } = useTranslation();
 
@@ -9,6 +11,9 @@ export default function App() {
       <Typography variant="h4" gutterBottom>
         {t("app.title")}
       </Typography>
+
+      <LanguageSwitcher fullWidth sx={{ mb: 2 }} />
+
       <TextField
         fullWidth
         placeholder={t("input.placeholder")}
