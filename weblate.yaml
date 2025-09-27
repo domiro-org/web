@@ -1,0 +1,17 @@
+weblate:
+  projects:
+    - name: Domiro
+      components:
+        - name: UI
+          slug: ui
+          repo: https://github.com/alexma233/domiro.git
+          branch: main
+          push: https://github.com/alexma233/domiro.git
+          filemask: src/locales/*/common.json
+          template: src/locales/zh-Hans/common.json
+          base_language: zh-Hans
+          file_format: json-nested
+          license: AGPL-3.0-or-later   # 或你实际选的 LICENSE
+          language_regex: '[a-z]{2}(?:-[A-Za-z0-9]+)?'
+          addons:
+            - weblate.cleanup.clean
