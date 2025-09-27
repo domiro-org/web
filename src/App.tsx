@@ -29,6 +29,7 @@ import type {
 import { parseDomains } from "./utils/parseDomains";
 import type { DomainCheckRow, Verdict, CheckState } from "./utils/domainCheckTypes";
 import { runDnsPrecheck } from "./utils/dnsPrecheck";
+import { runRdapCheck, type RdapCheckResult } from "./utils/rdapCheck";
 
 const ERROR_MESSAGE_KEYS: Record<DomainParseErrorCode, string> = {
   "invalid-format": "parse.errors.invalid-format",
@@ -59,6 +60,8 @@ export default function App() {
   );
   const [checkState, setCheckState] = useState<CheckState>("idle");
   const [rows, setRows] = useState<DomainCheckRow[]>([]);
+  const [rdapCheckedCount, setRdapCheckedCount] = useState(0);
+  const [errorMessageKey, setErrorMessageKey] = useState<string | null>(null);
   const runIdRef = useRef(0);
 
   // 点击按钮后执行解析流程
@@ -66,6 +69,8 @@ export default function App() {
     const result = parseDomains(inputValue);
     setParseResult(result);
     setRows([]);
+    setErrorMessageKey(null);
+    setRdapCheckedCount(0);
 
     if (result.domains.length === 0) {
       setCheckState("idle");
@@ -76,22 +81,57 @@ export default function App() {
     runIdRef.current = currentRunId;
     setCheckState("dns-checking");
 
+    let dnsRows: DomainCheckRow[];
+
     try {
-      const dnsRows = await runDnsChecks(result.domains, t);
-
-      // 若存在更晚的请求已经生效，则丢弃当前结果
-      if (runIdRef.current !== currentRunId) {
-        return;
-      }
-
-      setRows(dnsRows);
-      setCheckState("done");
+      dnsRows = await runDnsChecks(result.domains, t);
     } catch (error) {
       console.error("DNS precheck failed", error);
       if (runIdRef.current === currentRunId) {
         setCheckState("error");
+        setErrorMessageKey("dns.error.general");
       }
+      return;
     }
+
+    if (runIdRef.current !== currentRunId) {
+      return;
+    }
+
+    setRows(dnsRows);
+
+    let finalRows = dnsRows;
+    const rdapCandidates = dnsRows.filter((row) => shouldRunRdap(row.dns));
+
+    if (rdapCandidates.length > 0) {
+      setCheckState("rdap-checking");
+
+      try {
+        finalRows = await runRdapChecks(dnsRows, t);
+      } catch (error) {
+        console.error("RDAP check failed", error);
+        if (runIdRef.current === currentRunId) {
+          setCheckState("error");
+          setErrorMessageKey("rdap.error.general");
+        }
+        return;
+      }
+
+      if (runIdRef.current !== currentRunId) {
+        return;
+      }
+
+      setRows(finalRows);
+      setRdapCheckedCount(
+        finalRows.filter((row) => row.rdap !== null).length
+      );
+    }
+
+    if (runIdRef.current !== currentRunId) {
+      return;
+    }
+
+    setCheckState("done");
   };
 
   return (
@@ -179,14 +219,34 @@ export default function App() {
                 </Alert>
               )}
 
+              {checkState === "rdap-checking" && (
+                <Alert severity="info">
+                  <Stack spacing={1}>
+                    <Typography variant="body2">
+                      {t("rdap.checking")}
+                    </Typography>
+                    <LinearProgress />
+                  </Stack>
+                </Alert>
+              )}
+
               {checkState === "error" && (
-                <Alert severity="error">{t("dns.error.general")}</Alert>
+                <Alert severity="error">
+                  {t(errorMessageKey ?? "dns.error.general")}
+                </Alert>
               )}
 
               {checkState === "done" && rows.length > 0 && (
-                <Alert severity="success">
-                  {t("dns.done", { count: rows.length })}
-                </Alert>
+                <Stack spacing={1}>
+                  <Alert severity="success">
+                    {t("dns.done", { count: rows.length })}
+                  </Alert>
+                  {rdapCheckedCount > 0 && (
+                    <Alert severity="success">
+                      {t("rdap.done", { count: rdapCheckedCount })}
+                    </Alert>
+                  )}
+                </Stack>
               )}
 
               <TableContainer component={Paper} variant="outlined">
@@ -204,7 +264,8 @@ export default function App() {
                       <TableRow>
                         <TableCell colSpan={4}>
                           <Typography variant="body2" color="text.secondary">
-                            {checkState === "dns-checking"
+                            {checkState === "dns-checking" ||
+                            checkState === "rdap-checking"
                               ? t("dns.table.pending")
                               : t("dns.table.empty")}
                           </Typography>
@@ -320,7 +381,7 @@ async function runDnsChecks(
           tld: domain.tld,
           dns: dnsResult.status,
           rdap: null,
-          verdict: deriveVerdict(dnsResult.status),
+          verdict: deriveDnsVerdict(dnsResult.status),
           detail
         } satisfies DomainCheckRow;
       } catch (error) {
@@ -342,7 +403,63 @@ async function runDnsChecks(
   return results;
 }
 
-function deriveVerdict(status: DomainCheckRow["dns"]): Verdict {
+async function runRdapChecks(
+  rows: DomainCheckRow[],
+  t: TFunction
+): Promise<DomainCheckRow[]> {
+  const rdapSourceLabel = t("rdap.source.rdap-org");
+  const rdapSourceDetail = t("rdap.detail.source", { source: rdapSourceLabel });
+
+  const nextRows = await Promise.all(
+    rows.map(async (row) => {
+      if (!shouldRunRdap(row.dns)) {
+        return row;
+      }
+
+      try {
+        const rdapResult = await runRdapCheck(row.ascii);
+        const rdapDetail = mergeDetails(
+          rdapSourceDetail,
+          t(rdapResult.detailKey, rdapResult.detailParams)
+        );
+
+        return {
+          ...row,
+          rdap: rdapResult.status,
+          verdict: deriveVerdictWithRdap(row.dns, rdapResult),
+          detail: mergeDetails(row.detail, rdapDetail)
+        } satisfies DomainCheckRow;
+      } catch (error) {
+        console.error("runRdapCheck error", error);
+        return {
+          ...row,
+          rdap: null,
+          verdict: deriveVerdictWithRdap(row.dns, null),
+          detail: mergeDetails(row.detail, t("rdap.detail.network-error"))
+        } satisfies DomainCheckRow;
+      }
+    })
+  );
+
+  return nextRows;
+}
+
+function shouldRunRdap(status: DomainCheckRow["dns"]): boolean {
+  return status === "no-ns" || status === "nxdomain";
+}
+
+function mergeDetails(
+  baseDetail?: string,
+  appendDetail?: string
+): string | undefined {
+  if (baseDetail && appendDetail) {
+    return `${baseDetail} · ${appendDetail}`;
+  }
+
+  return appendDetail ?? baseDetail;
+}
+
+function deriveDnsVerdict(status: DomainCheckRow["dns"]): Verdict {
   if (status === "has-ns") {
     return "taken";
   }
@@ -352,4 +469,37 @@ function deriveVerdict(status: DomainCheckRow["dns"]): Verdict {
   }
 
   return "available";
+}
+
+function deriveVerdictWithRdap(
+  status: DomainCheckRow["dns"],
+  rdap: RdapCheckResult | null
+): Verdict {
+  if (rdap === null) {
+    if (status === "has-ns") {
+      return "taken";
+    }
+    if (status === "error") {
+      return "undetermined";
+    }
+    return "undetermined";
+  }
+
+  if (rdap.unsupported) {
+    return "rdap-unsupported";
+  }
+
+  if (rdap.available === true) {
+    return "available";
+  }
+
+  if (rdap.available === false) {
+    return "taken";
+  }
+
+  if (rdap.status === 429) {
+    return "undetermined";
+  }
+
+  return deriveDnsVerdict(status);
 }
