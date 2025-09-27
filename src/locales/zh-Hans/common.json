@@ -1,0 +1,10 @@
+{
+  "app.title": "Domiro 域名筛选器",
+  "action.check": "开始筛选",
+  "input.placeholder": "每行一个域名，例如 example.com",
+  "table.domain": "域名",
+  "table.status": "状态",
+  "status.available": "可注册",
+  "status.taken": "已注册",
+  "status.suspect": "疑似未委派（待核验）"
+}
