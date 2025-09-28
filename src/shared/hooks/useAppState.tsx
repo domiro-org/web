@@ -13,12 +13,11 @@ import {
   type AppAction,
   type AppSettings,
   type AppState,
-  type DomainParseResult,
+  type DomainItem,
+  type InputState,
   SESSION_STORAGE_KEY,
   SETTINGS_STORAGE_KEY
 } from "../types";
-
-const EMPTY_PARSE_RESULT: DomainParseResult = { domains: [], errors: [] };
 
 const defaultSettings: AppSettings = {
   rdapConcurrency: 3,
@@ -30,8 +29,7 @@ const defaultSettings: AppSettings = {
 const defaultState: AppState = {
   settings: { ...defaultSettings },
   input: {
-    value: "",
-    parsed: EMPTY_PARSE_RESULT,
+    domains: [],
     updatedAt: 0
   },
   dns: {
@@ -39,7 +37,9 @@ const defaultState: AppState = {
     rows: [],
     errorKey: null,
     runId: 0,
-    completedAt: null
+    completedAt: null,
+    totalCount: 0,
+    completedCount: 0
   },
   rdap: {
     checkedCount: 0,
@@ -66,8 +66,7 @@ function persistInput(value: AppState["input"]): void {
   }
 
   const payload = JSON.stringify({
-    value: value.value,
-    parsed: value.parsed,
+    domains: value.domains,
     updatedAt: value.updatedAt
   });
 
@@ -88,18 +87,36 @@ function loadPersistedInput(): AppState["input"] | null {
   }
 
   try {
-    const data = JSON.parse(payload) as AppState["input"];
-    if (
-      typeof data.value === "string" &&
-      data.parsed &&
-      Array.isArray(data.parsed.domains) &&
-      Array.isArray(data.parsed.errors)
-    ) {
+    const data = JSON.parse(payload) as Partial<InputState> & {
+      value?: string;
+      parsed?: { domains?: Array<{ domain: string; ascii: string; tld?: string }> };
+    };
+
+    if (Array.isArray(data.domains)) {
       return {
-        value: data.value,
-        parsed: data.parsed,
+        domains: data.domains.map(normalizePersistedDomain).filter(Boolean) as DomainItem[],
         updatedAt: data.updatedAt ?? 0
-      } satisfies AppState["input"];
+      } satisfies InputState;
+    }
+
+    // 兼容旧版存储结构
+    if (data.parsed?.domains) {
+      const fallbackDomains = data.parsed.domains
+        .map((item) =>
+          item?.ascii
+            ? normalizePersistedDomain({
+                ascii: item.ascii,
+                display: item.domain ?? item.ascii,
+                tld: item.tld
+              })
+            : null
+        )
+        .filter((item): item is DomainItem => Boolean(item));
+
+      return {
+        domains: dedupeDomains(fallbackDomains as DomainItem[]),
+        updatedAt: data.updatedAt ?? 0
+      } satisfies InputState;
     }
   } catch (error) {
     console.warn("Failed to parse persisted input", error);
@@ -176,12 +193,16 @@ export function useAppDispatch(): Dispatch<AppAction> {
 function createReducer(): (state: AppState, action: AppAction) => AppState {
   return (state, action) => {
     switch (action.type) {
-      case "input/set": {
+      case "input/setDomains": {
+        const normalized = dedupeDomains(action.payload.domains);
+        if (areDomainListsEqual(state.input.domains, normalized)) {
+          return state;
+        }
+
         return {
           ...state,
           input: {
-            value: action.payload.value,
-            parsed: action.payload.parsed,
+            domains: normalized,
             updatedAt: Date.now()
           },
           dns: {
@@ -190,13 +211,62 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
             rows: [],
             errorKey: null,
             runId: state.dns.runId + 1,
-            completedAt: null
+            completedAt: null,
+            totalCount: 0,
+            completedCount: 0
           },
           rdap: {
             checkedCount: 0,
             running: false,
             errorKey: null
           }
+        } satisfies AppState;
+      }
+      case "input/appendDomains": {
+        const { domains: merged, added } = mergeDomains(state.input.domains, action.payload.domains);
+        if (added === 0) {
+          return state;
+        }
+
+        return {
+          ...state,
+          input: {
+            domains: merged,
+            updatedAt: Date.now()
+          },
+          dns: {
+            ...state.dns,
+            stage: "idle",
+            rows: [],
+            errorKey: null,
+            runId: state.dns.runId + 1,
+            completedAt: null,
+            totalCount: 0,
+            completedCount: 0
+          },
+          rdap: {
+            checkedCount: 0,
+            running: false,
+            errorKey: null
+          }
+        } satisfies AppState;
+      }
+      case "input/clear": {
+        if (state.input.domains.length === 0) {
+          return state;
+        }
+
+        return {
+          ...state,
+          input: {
+            domains: [],
+            updatedAt: Date.now()
+          },
+          dns: {
+            ...defaultState.dns,
+            runId: state.dns.runId + 1
+          },
+          rdap: { ...defaultState.rdap }
         } satisfies AppState;
       }
       case "dns/start": {
@@ -207,12 +277,26 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
             rows: [],
             errorKey: null,
             runId: action.payload.runId,
-            completedAt: null
+            completedAt: null,
+            totalCount: action.payload.total,
+            completedCount: 0
           },
           rdap: {
             checkedCount: 0,
             running: false,
             errorKey: null
+          }
+        } satisfies AppState;
+      }
+      case "dns/progress": {
+        if (state.dns.runId !== action.payload.runId) {
+          return state;
+        }
+        return {
+          ...state,
+          dns: {
+            ...state.dns,
+            completedCount: Math.min(action.payload.completed, state.dns.totalCount)
           }
         } satisfies AppState;
       }
@@ -225,7 +309,8 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           dns: {
             ...state.dns,
             rows: action.payload.rows,
-            completedAt: Date.now()
+            completedAt: Date.now(),
+            completedCount: state.dns.totalCount
           }
         } satisfies AppState;
       }
@@ -335,6 +420,122 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
         return state;
     }
   };
+}
+
+/**
+ * 将域名条目统一规范化，确保 ASCII 小写与 TLD 存在。
+ */
+function normalizeDomainItem(item: DomainItem): DomainItem {
+  const ascii = item.ascii.trim().toLowerCase();
+  const display = item.display?.trim() ? item.display.trim() : ascii;
+  const tld = item.tld ?? extractTld(ascii);
+
+  return {
+    display,
+    ascii,
+    ...(tld ? { tld } : {})
+  } satisfies DomainItem;
+}
+
+/**
+ * 根据 ASCII 域名提取顶级域。
+ */
+function extractTld(ascii: string): string | undefined {
+  const lastDot = ascii.lastIndexOf(".");
+  if (lastDot === -1 || lastDot === ascii.length - 1) {
+    return undefined;
+  }
+  return ascii.slice(lastDot + 1);
+}
+
+/**
+ * 对域名数组去重，保留首个出现顺序。
+ */
+function dedupeDomains(domains: DomainItem[]): DomainItem[] {
+  const seen = new Set<string>();
+  const result: DomainItem[] = [];
+
+  for (const item of domains) {
+    const normalized = normalizeDomainItem(item);
+    if (seen.has(normalized.ascii)) {
+      continue;
+    }
+    seen.add(normalized.ascii);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+/**
+ * 合并新增域名，并返回新增数量。
+ */
+function mergeDomains(
+  existing: DomainItem[],
+  incoming: DomainItem[]
+): { domains: DomainItem[]; added: number } {
+  if (incoming.length === 0) {
+    return { domains: existing, added: 0 };
+  }
+
+  const seen = new Set(existing.map((item) => item.ascii.toLowerCase()));
+  const merged = [...existing];
+  let added = 0;
+
+  for (const raw of incoming) {
+    const normalized = normalizeDomainItem(raw);
+    if (seen.has(normalized.ascii)) {
+      continue;
+    }
+
+    seen.add(normalized.ascii);
+    merged.push(normalized);
+    added += 1;
+  }
+
+  if (added === 0) {
+    return { domains: existing, added: 0 };
+  }
+
+  return { domains: merged, added };
+}
+
+/**
+ * 判断两个域名列表是否等价。
+ */
+function areDomainListsEqual(a: DomainItem[], b: DomainItem[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((item, index) => {
+    const target = b[index];
+    return (
+      item.ascii === target.ascii &&
+      item.display === target.display &&
+      (item.tld ?? "") === (target.tld ?? "")
+    );
+  });
+}
+
+/**
+ * 兼容 sessionStorage 旧数据的域名结构。
+ */
+function normalizePersistedDomain(input: Partial<DomainItem> | null | undefined): DomainItem | null {
+  if (!input?.ascii) {
+    return null;
+  }
+
+  try {
+    return normalizeDomainItem({
+      ascii: input.ascii,
+      display: input.display ?? input.ascii,
+      tld: input.tld
+    });
+  } catch (error) {
+    console.warn("Failed to normalize persisted domain", error, input);
+    return null;
+  }
 }
 
 /**

@@ -330,10 +330,10 @@ export default function RdapPage() {
         </Box>
         <Box sx={{ flexGrow: 1, minHeight: 0 }}>
           <DataGrid
-            rows={rows}
+            rows={rdapCandidates}
             columns={columns}
             disableRowSelectionOnClick
-            disableVirtualization={rows.length <= 200}
+            disableVirtualization={rdapCandidates.length <= 200}
             loading={rdap.running}
             pagination
             getRowHeight={() => "auto"}
@@ -342,7 +342,7 @@ export default function RdapPage() {
             aria-label={t("page.rdap.table.title")}
             localeText={{
               noRowsLabel: t("page.rdap.table.empty"),
-              footerTotalRows: t("page.rdap.table.total", { count: rows.length })
+              footerTotalRows: t("page.rdap.table.total", { count: rdapCandidates.length })
             }}
             sx={{
               flexGrow: 1,

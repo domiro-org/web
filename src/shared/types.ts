@@ -1,15 +1,17 @@
 /**
- * 描述单条域名校验错误。
+ * 域名条目结构，保存展示与 ASCII 形式。
  */
-export interface DomainParseError {
-  /** 原始用户输入 */
-  input: string;
-  /** 错误类型代码 */
-  code: DomainParseErrorCode;
+export interface DomainItem {
+  /** 原始展示（可能为 IDN） */
+  display: string;
+  /** punycode 转换后的 ASCII */
+  ascii: string;
+  /** 顶级域，可选字段方便后续扩展 */
+  tld?: string;
 }
 
 /**
- * 域名解析错误的类型集合。
+ * 域名归一化过程中的错误类型。
  */
 export type DomainParseErrorCode =
   | "invalid-format"
@@ -18,27 +20,53 @@ export type DomainParseErrorCode =
   | "duplicate";
 
 /**
- * 经过解析后的域名实体。
+ * 记录单条校验失败的域名及原因。
  */
-export interface ParsedDomain {
-  /** 域名唯一标识 */
-  id: string;
-  /** 原始展示形态 */
-  domain: string;
-  /** ASCII 形式 */
-  ascii: string;
-  /** 顶级域字符串 */
-  tld: string;
+export interface DomainParseError {
+  /** 用户原始输入 */
+  input: string;
+  /** 错误代码 */
+  code: DomainParseErrorCode;
 }
 
 /**
- * 域名解析结果集合。
+ * 文件解析的统一结果结构。
  */
-export interface DomainParseResult {
-  /** 通过校验的域名数组 */
-  domains: ParsedDomain[];
-  /** 所有校验错误 */
-  errors: DomainParseError[];
+export interface FileParseResult {
+  /** 解析出的所有文本条目 */
+  entries: string[];
+  /** 总行数（包含空行） */
+  totalLines: number;
+  /** 文件体积（字节） */
+  fileSize: number;
+  /** 可选：列名信息（CSV 使用） */
+  headers?: string[];
+  /** CSV 行数据（按列切分） */
+  rows?: string[][];
+  /** 实际使用的分隔符 */
+  delimiter?: "," | ";" | "\t";
+}
+
+/**
+ * 域名归一化的统一返回值。
+ */
+export interface DomainNormalizationResult {
+  /** 通过校验的域名集合 */
+  valid: DomainItem[];
+  /** 被认定为重复的原始条目 */
+  duplicate: string[];
+  /** 无法通过校验的原始条目 */
+  invalid: string[];
+}
+
+/**
+ * 输入模块在全局状态中的结构。
+ */
+export interface InputState {
+  /** 当前已收集的域名列表 */
+  domains: DomainItem[];
+  /** 最近一次更新的时间戳 */
+  updatedAt: number;
 }
 
 /**
@@ -153,14 +181,7 @@ export interface AppState {
   /** 运行设置 */
   settings: AppSettings;
   /** 输入页状态 */
-  input: {
-    /** 当前文本 */
-    value: string;
-    /** 上次解析结果 */
-    parsed: DomainParseResult;
-    /** 最后一次保存时间戳 */
-    updatedAt: number;
-  };
+  input: InputState;
   /** DNS 页状态 */
   dns: {
     /** 当前阶段 */
@@ -173,6 +194,10 @@ export interface AppState {
     runId: number;
     /** 已完成 DNS 查询的时间 */
     completedAt: number | null;
+    /** 总待查询的域名数量 */
+    totalCount: number;
+    /** 已完成查询的域名数量 */
+    completedCount: number;
   };
   /** RDAP 页状态 */
   rdap: {
@@ -194,10 +219,13 @@ export interface AppState {
  * Reducer 可用的动作类型。
  */
 export type AppAction =
-  | { type: "input/set"; payload: { value: string; parsed: DomainParseResult } }
-  | { type: "dns/start"; payload: { runId: number } }
+  | { type: "input/setDomains"; payload: { domains: DomainItem[] } }
+  | { type: "input/appendDomains"; payload: { domains: DomainItem[] } }
+  | { type: "input/clear" }
+  | { type: "dns/start"; payload: { runId: number; total: number } }
+  | { type: "dns/progress"; payload: { runId: number; completed: number } }
   | { type: "dns/success"; payload: { rows: DomainCheckRow[]; runId: number } }
- | { type: "dns/error"; payload: { messageKey: string; runId: number } }
+  | { type: "dns/error"; payload: { messageKey: string; runId: number } }
   | { type: "rdap/start" }
   | { type: "rdap/update"; payload: { rows: DomainCheckRow[]; checked: number } }
   | { type: "rdap/error"; payload: { messageKey: string } }

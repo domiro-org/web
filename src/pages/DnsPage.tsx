@@ -31,6 +31,12 @@ export default function DnsPage() {
   const { t } = useTranslation();
   const { input, dns, settings } = useAppState();
   const dispatch = useAppDispatch();
+  const progressValue = useMemo(() => {
+    if (dns.totalCount === 0) {
+      return 0;
+    }
+    return Math.min(100, Math.round((dns.completedCount / dns.totalCount) * 100));
+  }, [dns.completedCount, dns.totalCount]);
 
   const columns = useMemo<GridColDef[]>(
     () => [
@@ -173,7 +179,7 @@ export default function DnsPage() {
   }, [csvColumns, dispatch, dns.rows]);
 
   const handleRunChecks = useCallback(async () => {
-    if (input.parsed.domains.length === 0) {
+    if (input.domains.length === 0) {
       dispatch({
         type: "ui/snackbar",
         payload: { severity: "warning", messageKey: "page.dns.snackbar.noInput" }
@@ -182,24 +188,31 @@ export default function DnsPage() {
     }
 
     const runId = Date.now();
-    dispatch({ type: "dns/start", payload: { runId } });
+    const total = input.domains.length;
+    dispatch({ type: "dns/start", payload: { runId, total } });
 
     // 预生成表格基础行，便于后续填充查询结果
-    const baseRows = input.parsed.domains.map((domain) => ({
-      id: domain.id,
-      domain: domain.domain,
-      ascii: domain.ascii,
-      tld: domain.tld,
-      dns: "error" as const,
-      rdap: null,
-      verdict: "undetermined" as const,
-      detail: undefined
-    }));
+    const baseRows = input.domains.map((domain) => {
+      const ascii = domain.ascii;
+      const tld = domain.tld ?? (ascii.includes(".") ? ascii.substring(ascii.lastIndexOf(".") + 1) : "");
+      return {
+        id: ascii,
+        domain: domain.display,
+        ascii,
+        tld,
+        dns: "error" as const,
+        rdap: null,
+        verdict: "undetermined" as const,
+        detail: undefined
+      };
+    });
 
     try {
       // 使用 Promise.all 并行执行 DoH 查询，加快批量处理速度
-      const nextRows = await Promise.all(
-        baseRows.map(async (row) => {
+      const nextRows: DomainCheckRow[] = new Array(baseRows.length);
+      let completed = 0;
+      await Promise.all(
+        baseRows.map(async (row, index) => {
           try {
             const result = await runDohQuery(row.ascii, settings.dohProviders);
             const providerLabel = result.provider
@@ -211,7 +224,7 @@ export default function DnsPage() {
             );
 
             const dnsStatus = result.status;
-            return {
+            nextRows[index] = {
               ...row,
               dns: dnsStatus,
               verdict: deriveDnsVerdict(dnsStatus),
@@ -219,12 +232,16 @@ export default function DnsPage() {
             };
           } catch (error) {
             console.error("runDohQuery error", error);
-            return {
+            nextRows[index] = {
               ...row,
               dns: "error" as const,
               verdict: "undetermined" as const,
               detail: t("dns.detail.network-error")
             };
+          } finally {
+            // 记录已完成数量并同步到全局状态，驱动进度条
+            completed += 1;
+            dispatch({ type: "dns/progress", payload: { runId, completed } });
           }
         })
       );
@@ -248,7 +265,7 @@ export default function DnsPage() {
         payload: { severity: "error", messageKey: "dns.error.general" }
       });
     }
-  }, [dispatch, input.parsed.domains, settings.dohProviders, t]);
+  }, [dispatch, input.domains, settings.dohProviders, t]);
 
   return (
     <Stack spacing={3}>
@@ -310,7 +327,13 @@ export default function DnsPage() {
             <Typography variant="body2" color="text.secondary">
               {t("common.progress.overall")}
             </Typography>
-            <LinearProgress />
+            <LinearProgress variant="determinate" value={progressValue} />
+            <Typography variant="caption" color="text.secondary">
+              {t("dns.progress.count", {
+                completed: dns.completedCount,
+                total: dns.totalCount
+              })}
+            </Typography>
           </Stack>
         </Paper>
       ) : null}
@@ -341,7 +364,7 @@ export default function DnsPage() {
             columnHeaderHeight={44}
             disableRowSelectionOnClick
             disableVirtualization={dns.rows.length <= 200}
-            loading={dns.stage === "dns-checking"}
+            loading={dns.stage === "dns-checking" && dns.completedCount < dns.totalCount}
             initialState={{
               pagination: { paginationModel: { pageSize: 25 } }
             }}

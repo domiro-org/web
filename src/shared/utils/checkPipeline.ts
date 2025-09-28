@@ -1,16 +1,12 @@
-import type {
-  DomainCheckRow,
-  DomainParseResult,
-  RdapCheckResult,
-  Verdict
-} from "../types";
+import type { DomainCheckRow, DomainItem, RdapCheckResult, Verdict } from "../types";
 
 /**
  * 判断 DNS 状态是否需要执行 RDAP 兜底。
  * @param status DNS 阶段输出
  */
 export function shouldRunRdap(status: DomainCheckRow["dns"]): boolean {
-  return status === "no-ns" || status === "nxdomain";
+  // DNS 查询失败时同样进入 RDAP 兜底，避免遗漏可注册域
+  return status === "no-ns" || status === "nxdomain" || status === "error";
 }
 
 /**
@@ -79,12 +75,12 @@ export function deriveVerdictWithRdap(
 /**
  * 根据解析结果创建 DNS 表格初始行。
  */
-export function buildInitialRows(result: DomainParseResult): DomainCheckRow[] {
-  return result.domains.map((domain) => ({
-    id: domain.id,
-    domain: domain.domain,
+export function buildInitialRows(domains: DomainItem[]): DomainCheckRow[] {
+  return domains.map((domain) => ({
+    id: domain.ascii,
+    domain: domain.display,
     ascii: domain.ascii,
-    tld: domain.tld,
+    tld: domain.tld ?? (domain.ascii.includes(".") ? domain.ascii.split(".").pop() ?? "" : ""),
     dns: "error",
     rdap: null,
     verdict: "undetermined"
