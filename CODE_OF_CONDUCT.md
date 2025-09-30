@@ -1,6 +1,7 @@
 # Contributor Covenant 3.0 Code of Conduct
 
 Translations:
+
 - [English](CODE_OF_CONDUCT.md)
 - [简体中文](CODE_OF_CONDUCT.zh-Hans.md)
 

@@ -1,6 +1,7 @@
 # 贡献者公约
 
 Translations:
+
 - [English](CODE_OF_CONDUCT.md)
 - [简体中文](CODE_OF_CONDUCT.zh-Hans.md)
 
