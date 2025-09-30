@@ -1,5 +1,9 @@
 # 贡献者公约
 
+Translations:
+- [English](CODE_OF_CONDUCT.md)
+- [简体中文](CODE_OF_CONDUCT.zh-Hans.md)
+
 ## 我们的承诺
 
 我们承诺使我们的社区对所有人保持友好、安全且公平。
