@@ -151,13 +151,6 @@ export default function WideShell({ children }: PropsWithChildren) {
           ))}
         </List>
         <Divider flexItem />
-        <Box>
-          <Typography variant="overline" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-            {t("language.select")}
-          </Typography>
-          <LanguageSwitcher fullWidth size="small" />
-        </Box>
-        <Divider flexItem />
         <List disablePadding>
           {settingsItems.map((item) => (
             <ListItem key={item.to} disablePadding>
@@ -182,6 +175,11 @@ export default function WideShell({ children }: PropsWithChildren) {
           ))}
         </List>
       </Stack>
+      {/* 语言选择固定在侧栏左下角：通过将其放在最底部并留出内边距实现 */}
+      <Divider />
+      <Box sx={{ px: 1.5, py: 2 }}>
+        <LanguageSwitcher fullWidth size="small" />
+      </Box>
     </Box>
   );
 
