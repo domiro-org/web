@@ -1,19 +1,23 @@
 # Domiro
 
-一个用 **React + Vite + Material UI** 开发的域名可用性筛选工具。
+Translations:
+- [English](README.md)
+- [简体中文](README.zh-Hans.md)
 
-## 功能
+A domain availability filtering tool built with **React + Vite + Material UI**.
 
-- 通过 DNS (DoH) 查询判断域名是否已委派
-- 通过 RDAP / WHOIS 二次校验是否注册
-- 跨平台，Material Design 3 风格界面
+## Features
 
-## 开发环境
+* Check whether a domain is delegated via DNS lookup
+* Perform secondary verification of registration through RDAP
+* Cross-platform with a Material Design 3 style interface
 
-- Node.js v22
-- 包管理器：npm
+## Development Environment
 
-## 启动
+* Node.js v22
+* Package manager: npm
+
+## Getting Started
 
 ```bash
 npm install
