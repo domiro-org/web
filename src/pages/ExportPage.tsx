@@ -1,19 +1,9 @@
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Checkbox from "@mui/material/Checkbox";
-import FormControl from "@mui/material/FormControl";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormGroup from "@mui/material/FormGroup";
-import FormHelperText from "@mui/material/FormHelperText";
-import FormLabel from "@mui/material/FormLabel";
 import Paper from "@mui/material/Paper";
-import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
-import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
-import type { ChangeEvent } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { TFunction } from "i18next";
@@ -38,16 +28,15 @@ const VERDICT_KEYS = {
   "rdap-unsupported": "verdict.rdap-unsupported"
 } as const;
 
-const PROVIDER_ORDER: DohProviderId[] = ["google", "cloudflare"];
+//
 
 /**
- * 导出与设置页面。
+ * 导出页面：提供结果下载操作。
  */
 export default function ExportPage() {
   const { t } = useTranslation();
   const { input, dns, settings } = useAppState();
   const dispatch = useAppDispatch();
-  const [providerError, setProviderError] = useState(false);
 
   const dnsCsvColumns = useMemo(
     () => [
@@ -152,43 +141,6 @@ export default function ExportPage() {
     });
   }, [dispatch, dns, input, settings]);
 
-  const handleProviderToggle = useCallback(
-    (provider: DohProviderId) => (_event: ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      if (!checked && settings.dohProviders.length === 1 && settings.dohProviders[0] === provider) {
-        setProviderError(true);
-        return;
-      }
-
-      setProviderError(false);
-      const nextProviders = checked
-        ? sortProviders([...settings.dohProviders, provider])
-        : settings.dohProviders.filter((item) => item !== provider);
-      dispatch({ type: "settings/update", payload: { dohProviders: nextProviders } });
-    },
-    [dispatch, settings.dohProviders]
-  );
-
-  const handleConcurrencyChange = useCallback(
-    (_event: Event, value: number | number[]) => {
-      const nextValue = Array.isArray(value) ? value[0] : value;
-      dispatch({ type: "settings/update", payload: { rdapConcurrency: nextValue } });
-    },
-    [dispatch]
-  );
-
-  const handleProxyToggle = useCallback(
-    (_event: ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      dispatch({ type: "settings/update", payload: { useProxy: checked } });
-    },
-    [dispatch]
-  );
-
-  const handleWhoisToggle = useCallback(
-    (_event: ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      dispatch({ type: "settings/update", payload: { enableWhoisFallback: checked } });
-    },
-    [dispatch]
-  );
 
   const providerLabel = useMemo(
     () => formatProviders(settings.dohProviders, t),
@@ -268,72 +220,7 @@ export default function ExportPage() {
         </Stack>
       </Paper>
 
-      <Paper
-        elevation={1}
-        sx={{
-          p: 3,
-          display: "flex",
-          flexDirection: "column",
-          gap: 3,
-          flexGrow: 1,
-          minHeight: 0
-        }}
-      >
-        <Typography variant="h6">{t("page.export.settings.title")}</Typography>
-        <FormControl component="fieldset" error={providerError} variant="standard">
-          <FormLabel component="legend">{t("page.export.settings.dohLabel")}</FormLabel>
-          <FormGroup row>
-            {PROVIDER_ORDER.map((provider) => (
-              <FormControlLabel
-                key={provider}
-                control={
-                  <Checkbox
-                    checked={settings.dohProviders.includes(provider)}
-                    onChange={handleProviderToggle(provider)}
-                  />
-                }
-                label={t(`page.export.settings.provider.${provider}`)}
-              />
-            ))}
-          </FormGroup>
-          <FormHelperText>
-            {providerError
-              ? t("page.export.settings.providerError")
-              : t("page.export.settings.dohHelper")}
-          </FormHelperText>
-        </FormControl>
-
-        <Box>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <FormLabel component="legend">
-              {t("page.export.settings.rdapConcurrency")}
-            </FormLabel>
-            <Typography variant="body2" color="text.secondary">
-              {t("page.export.settings.rdapHelper", { value: settings.rdapConcurrency })}
-            </Typography>
-          </Stack>
-          <Slider
-            value={settings.rdapConcurrency}
-            min={1}
-            max={12}
-            step={1}
-            marks
-            valueLabelDisplay="auto"
-            onChange={handleConcurrencyChange}
-          />
-        </Box>
-
-        <FormGroup>
-          <FormControlLabel
-            control={<Switch checked={settings.useProxy} onChange={handleProxyToggle} />}
-            label={t("page.export.settings.proxy")}
-          />
-          <FormControlLabel
-            control={<Switch checked={settings.enableWhoisFallback} onChange={handleWhoisToggle} />}
-            label={t("page.export.settings.whois")}
-          />
-        </FormGroup>
-      </Paper>
+      {/* 设置区块已迁移至独立的设置页 */}
     </>
   );
 }
@@ -354,13 +241,6 @@ function SidebarStat({ label, value }: SidebarStatProps) {
       </Typography>
     </Stack>
   );
-}
-
-/**
- * 将 DoH 提供者按既定顺序排序，确保展示一致。
- */
-function sortProviders(providers: DohProviderId[]): DohProviderId[] {
-  return PROVIDER_ORDER.filter((provider) => providers.includes(provider));
 }
 
 /**
