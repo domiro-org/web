@@ -335,6 +335,7 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           ...state,
           dns: {
             ...state.dns,
+            stage: state.rdap.running ? "rdap-checking" : "done",
             rows: action.payload.rows,
             completedAt: Date.now(),
             completedCount: state.dns.totalCount
