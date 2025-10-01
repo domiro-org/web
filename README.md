@@ -5,13 +5,13 @@ Translations:
 - [English](README.md)
 - [简体中文](README.zh-Hans.md)
 
-A domain availability filtering tool built with **React + Vite + Material UI**.
+Domiro streamlines domain qualification by uniting DNS pre-checks and RDAP verification in a single, reliable workspace. Bulk import, smart deduplication, and export tooling help acquisition teams validate portfolios before committing budgets. The app is built with **React**, **Vite**, and **Material UI (MD3)** for responsive, cross-platform operations.
 
 ## Features
 
-- Check whether a domain is delegated via DNS lookup
-- Perform secondary verification of registration through RDAP
-- Cross-platform with a Material Design 3 style interface
+- Bulk input via manual entry, CSV/TXT uploads, or pattern dictionaries with automatic cleanup
+- Verify delegation status with multi-provider DNS over HTTPS and highlight RDAP candidates
+- Run RDAP lookups with rate-limit awareness and export structured results for downstream tools
 
 ## Development Environment
 
