@@ -7,7 +7,7 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useWideShellSidebar } from "../layouts/WideShell";
@@ -38,6 +38,8 @@ export default function RdapPage() {
   const { dns, rdap, settings } = useAppState();
   const dispatch = useAppDispatch();
   const { enqueue, clear } = useConcurrentQueue(settings.rdapConcurrency);
+  const pendingUpdateIdsRef = useRef<Set<string>>(new Set());
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => clear, [clear]);
 
@@ -191,7 +193,12 @@ export default function RdapPage() {
       return;
     }
 
-    // 发起 RDAP 流程，切换全局状态为运行中
+    // 发起 RDAP 流程前清理节流状态，切换全局状态为运行中
+    pendingUpdateIdsRef.current.clear();
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
     dispatch({ type: "rdap/start" });
 
     const sourceLabel = t("rdap.source.rdap-org");
@@ -200,15 +207,34 @@ export default function RdapPage() {
     const workingMap = new Map(rows.map((row) => [row.id, row]));
     let completed = 0;
 
-    // 单个任务完成后刷新 Map 并广播最新结果
-    const updateSnapshot = (updatedRow: DomainCheckRow) => {
-      workingMap.set(updatedRow.id, updatedRow);
-      completed += 1;
+    // 批量派发最新快照
+    const flushUpdates = () => {
+      rafIdRef.current = null;
+      if (pendingUpdateIdsRef.current.size === 0) {
+        return;
+      }
       const snapshot = rowOrder.map((id) => workingMap.get(id)!);
+      pendingUpdateIdsRef.current.clear();
       dispatch({
         type: "rdap/update",
         payload: { rows: snapshot, checked: completed }
       });
+    };
+
+    // 触发节流回调，确保固定频率派发
+    const scheduleFlush = () => {
+      if (rafIdRef.current !== null) {
+        return;
+      }
+      rafIdRef.current = requestAnimationFrame(flushUpdates);
+    };
+
+    // 单个任务完成后仅更新 Map 并记录待派发行
+    const updateSnapshot = (updatedRow: DomainCheckRow) => {
+      workingMap.set(updatedRow.id, updatedRow);
+      completed += 1;
+      pendingUpdateIdsRef.current.add(updatedRow.id);
+      scheduleFlush();
     };
 
     try {
@@ -248,6 +274,7 @@ export default function RdapPage() {
         )
       );
 
+      flushUpdates();
       const finalRows = rowOrder.map((id) => workingMap.get(id)!);
       dispatch({ type: "process/complete", payload: { rows: finalRows } });
       dispatch({
@@ -256,6 +283,7 @@ export default function RdapPage() {
       });
     } catch (error) {
       console.error("RDAP execution failed", error);
+      flushUpdates();
       dispatch({ type: "rdap/error", payload: { messageKey: "rdap.error.general" } });
       dispatch({
         type: "ui/snackbar",
