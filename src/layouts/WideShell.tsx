@@ -17,18 +17,12 @@ import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import type { PropsWithChildren, ReactNode } from "react";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import { WideShellContext, type WideShellContextValue } from "./WideShellContext";
 
 const DRAWER_WIDTH = 280;
 
@@ -36,31 +30,6 @@ interface NavigationItem {
   to: string;
   labelKey: string;
   exact?: boolean;
-}
-
-interface WideShellContextValue {
-  setSidebar: (content: ReactNode | null) => void;
-  clearSidebar: () => void;
-}
-
-const WideShellContext = createContext<WideShellContextValue | undefined>(undefined);
-
-/**
- * 供页面设置右侧侧栏的 Hook。
- */
-export function useWideShellSidebar(content: ReactNode | null) {
-  const context = useContext(WideShellContext);
-
-  useEffect(() => {
-    if (!context) {
-      return undefined;
-    }
-
-    context.setSidebar(content);
-    return () => {
-      context.clearSidebar();
-    };
-  }, [content, context]);
 }
 
 /**
@@ -98,7 +67,7 @@ export default function WideShell({ children }: PropsWithChildren) {
     setSidebarContent(null);
   }, []);
 
-  const contextValue = useMemo(
+  const contextValue = useMemo<WideShellContextValue>(
     () => ({ setSidebar, clearSidebar }),
     [clearSidebar, setSidebar]
   );

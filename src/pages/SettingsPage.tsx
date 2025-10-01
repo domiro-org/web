@@ -14,7 +14,7 @@ import type { ChangeEvent } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useWideShellSidebar } from "../layouts/WideShell";
+import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 import type { DohProviderId } from "../shared/types";
 

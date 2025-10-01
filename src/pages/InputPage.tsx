@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import DictionaryTab from "../features/input/DictionaryTab";
 import ManualTab from "../features/input/ManualTab";
 import UploadTab from "../features/input/UploadTab";
-import { useWideShellSidebar } from "../layouts/WideShell";
+import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 
 type TabValue = "dictionary" | "upload" | "manual";

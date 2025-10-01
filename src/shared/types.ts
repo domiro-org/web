@@ -205,6 +205,8 @@ export interface AppState {
   rdap: {
     /** 已完成 RDAP 的数量 */
     checkedCount: number;
+    /** 当前批次的总待查询数 */
+    totalCount: number;
     /** 是否仍在运行 */
     running: boolean;
     /** 最近错误 key */
@@ -225,10 +227,11 @@ export type AppAction =
   | { type: "input/appendDomains"; payload: { domains: DomainItem[] } }
   | { type: "input/clear" }
   | { type: "dns/start"; payload: { runId: number; total: number } }
+  | { type: "dns/retry"; payload: { runId: number; total: number } }
   | { type: "dns/progress"; payload: { runId: number; completed: number } }
   | { type: "dns/success"; payload: { rows: DomainCheckRow[]; runId: number } }
   | { type: "dns/error"; payload: { messageKey: string; runId: number } }
-  | { type: "rdap/start" }
+  | { type: "rdap/start"; payload: { total: number } }
   | { type: "rdap/update"; payload: { rows: DomainCheckRow[]; checked: number } }
   | { type: "rdap/error"; payload: { messageKey: string } }
   | { type: "process/reset" }

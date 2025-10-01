@@ -4,6 +4,8 @@ import type {
   DohProviderId
 } from "../types";
 
+import { delay } from "./async";
+
 const NS_RECORD_TYPE = 2;
 const SOA_RECORD_TYPE = 6;
 
@@ -89,6 +91,54 @@ export async function runDohQuery(
     provider: null,
     detail: lastDetail ?? "dns.detail.unknown-error"
   } satisfies DnsPrecheckResult;
+}
+
+interface DohRetryOptions {
+  /** 最大自动重试次数（包含首次尝试） */
+  attempts?: number;
+  /** 基础退避时间，单位毫秒 */
+  delayMs?: number;
+}
+
+/**
+ * 对 DoH 查询结果提供自动重试能力，避免短暂抖动导致整体失败。
+ * @param domain ASCII 形式的域名
+ * @param preferredProviders 用户选择的 DoH 服务顺序
+ * @param options 重试参数
+ */
+export async function runDohQueryWithRetry(
+  domain: string,
+  preferredProviders?: DohProviderId[],
+  options?: DohRetryOptions
+): Promise<DnsPrecheckResult> {
+  const attempts = Math.max(options?.attempts ?? 3, 1);
+  const baseDelay = Math.max(options?.delayMs ?? 400, 0);
+  let lastError: unknown;
+  let lastResult: DnsPrecheckResult | null = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const result = await runDohQuery(domain, preferredProviders);
+      if (result.status === "error" && attempt < attempts) {
+        lastResult = result;
+        await delay(baseDelay * attempt);
+        continue;
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) {
+        throw error;
+      }
+      await delay(baseDelay * attempt);
+    }
+  }
+
+  if (lastResult) {
+    return lastResult;
+  }
+
+  throw lastError ?? new Error("DoH query failed");
 }
 
 /**

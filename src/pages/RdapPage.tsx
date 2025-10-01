@@ -10,16 +10,19 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useWideShellSidebar } from "../layouts/WideShell";
+import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 import { useConcurrentQueue } from "../shared/hooks/useConcurrentQueue";
 import type { DomainCheckRow } from "../shared/types";
-import { runRdapQuery } from "../shared/utils/rdapQuery";
+import { runRdapQueryWithRetry } from "../shared/utils/rdapQuery";
 import {
   deriveVerdictWithRdap,
   mergeDetails,
   shouldRunRdap
 } from "../shared/utils/checkPipeline";
+
+const RDAP_RETRY_ATTEMPTS = 3;
+const RDAP_RETRY_DELAY_MS = 1000;
 
 const RDAP_STAGE_COLORS: Record<number, "success" | "warning" | "error" | "info"> = {
   200: "error",
@@ -50,11 +53,26 @@ export default function RdapPage() {
   );
 
   const progressValue = useMemo(() => {
-    if (rdapCandidates.length === 0) {
+    if (rdap.totalCount === 0) {
       return 0;
     }
-    return Math.round((rdap.checkedCount / rdapCandidates.length) * 100);
-  }, [rdapCandidates.length, rdap.checkedCount]);
+    return Math.min(100, Math.round((rdap.checkedCount / rdap.totalCount) * 100));
+  }, [rdap.checkedCount, rdap.totalCount]);
+
+  const failedRdapRows = useMemo(() => {
+    const networkErrorText = t("rdap.detail.network-error");
+    return rdapCandidates.filter((row) => {
+      if (row.rdap === 429) {
+        return true;
+      }
+      if (!row.detail) {
+        return false;
+      }
+      return row.detail.includes(networkErrorText);
+    });
+  }, [rdapCandidates, t]);
+  const failedRdapCount = failedRdapRows.length;
+  const hasFailedRdapRows = failedRdapCount > 0;
 
   const columns = useMemo<GridColDef[]>(
     () => [
@@ -132,10 +150,7 @@ export default function RdapPage() {
     [t]
   );
 
-  const stats = useMemo(() => buildRdapStats(rdapCandidates, rdap.checkedCount), [
-    rdapCandidates,
-    rdap.checkedCount
-  ]);
+  const stats = useMemo(() => buildRdapStats(rdapCandidates), [rdapCandidates]);
 
   const sidebarContent = useMemo(
     () => (
@@ -176,6 +191,123 @@ export default function RdapPage() {
 
   useWideShellSidebar(sidebarContent);
 
+  const runRdapBatch = useCallback(
+    async (targets: DomainCheckRow[], successMessageKey: string) => {
+      if (targets.length === 0) {
+        return;
+      }
+
+      // 发起 RDAP 流程前清理节流状态，切换全局状态为运行中
+      pendingUpdateIdsRef.current.clear();
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      dispatch({ type: "rdap/start", payload: { total: targets.length } });
+
+      const sourceLabel = t("rdap.source.rdap-org");
+      const sourceDetail = t("rdap.detail.source", { source: sourceLabel });
+      const rowOrder = rows.map((row) => row.id);
+      const workingMap = new Map(rows.map((row) => [row.id, { ...row }]));
+      let completed = 0;
+
+      // 批量派发最新快照
+      const flushUpdates = () => {
+        rafIdRef.current = null;
+        if (pendingUpdateIdsRef.current.size === 0) {
+          return;
+        }
+        const snapshot = rowOrder.map((id) => workingMap.get(id)!);
+        pendingUpdateIdsRef.current.clear();
+        dispatch({
+          type: "rdap/update",
+          payload: { rows: snapshot, checked: Math.min(completed, targets.length) }
+        });
+      };
+
+      // 触发节流回调，确保固定频率派发
+      const scheduleFlush = () => {
+        if (rafIdRef.current !== null) {
+          return;
+        }
+        rafIdRef.current = requestAnimationFrame(flushUpdates);
+      };
+
+      // 单个任务完成后仅更新 Map 并记录待派发行
+      const updateSnapshot = (updatedRow: DomainCheckRow) => {
+        workingMap.set(updatedRow.id, updatedRow);
+        completed += 1;
+        pendingUpdateIdsRef.current.add(updatedRow.id);
+        scheduleFlush();
+      };
+
+      try {
+        // 控制并发执行 RDAP 请求，全部完成后再落盘
+        await Promise.all(
+          targets.map((candidate) =>
+            enqueue(async () => {
+              const baseRow = workingMap.get(candidate.id) ?? { ...candidate };
+              try {
+                const rdapResult = await runRdapQueryWithRetry(candidate.ascii, {
+                  useProxy: settings.useProxy,
+                  attempts: RDAP_RETRY_ATTEMPTS,
+                  delayMs: RDAP_RETRY_DELAY_MS
+                });
+                if (rdapResult.unsupported && settings.enableWhoisFallback) {
+                  // TODO: integrate WHOIS fallback for unsupported TLDs
+                }
+                const nextDetail = mergeDetails(
+                  mergeDetails(baseRow.detail, sourceDetail),
+                  t(rdapResult.detailKey, rdapResult.detailParams)
+                );
+                const nextRow: DomainCheckRow = {
+                  ...baseRow,
+                  rdap: rdapResult.status,
+                  verdict: deriveVerdictWithRdap(baseRow.dns, rdapResult),
+                  detail: nextDetail
+                };
+                updateSnapshot(nextRow);
+              } catch (error) {
+                console.error("runRdapQuery error", error);
+                const fallbackRow: DomainCheckRow = {
+                  ...baseRow,
+                  rdap: baseRow.rdap,
+                  verdict: deriveVerdictWithRdap(baseRow.dns, null),
+                  detail: mergeDetails(baseRow.detail, t("rdap.detail.network-error"))
+                };
+                updateSnapshot(fallbackRow);
+              }
+            })
+          )
+        );
+
+        flushUpdates();
+        const finalRows = rowOrder.map((id) => workingMap.get(id)!);
+        dispatch({ type: "process/complete", payload: { rows: finalRows } });
+        dispatch({
+          type: "ui/snackbar",
+          payload: { severity: "success", messageKey: successMessageKey }
+        });
+      } catch (error) {
+        console.error("RDAP execution failed", error);
+        flushUpdates();
+        dispatch({ type: "rdap/error", payload: { messageKey: "rdap.error.general" } });
+        dispatch({
+          type: "ui/snackbar",
+          payload: { severity: "error", messageKey: "rdap.error.general" }
+        });
+      }
+    },
+    [
+      dispatch,
+      enqueue,
+      rows,
+      settings.enableWhoisFallback,
+      settings.useProxy,
+      t
+    ]
+  );
+
   const handleRunRdap = useCallback(async () => {
     if (rows.length === 0) {
       dispatch({
@@ -193,112 +325,16 @@ export default function RdapPage() {
       return;
     }
 
-    // 发起 RDAP 流程前清理节流状态，切换全局状态为运行中
-    pendingUpdateIdsRef.current.clear();
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
+    await runRdapBatch(rdapCandidates, "page.rdap.snackbar.success");
+  }, [dispatch, rdapCandidates, rows.length, runRdapBatch]);
+
+  const handleRetryFailed = useCallback(async () => {
+    if (failedRdapRows.length === 0) {
+      return;
     }
-    dispatch({ type: "rdap/start" });
 
-    const sourceLabel = t("rdap.source.rdap-org");
-    const sourceDetail = t("rdap.detail.source", { source: sourceLabel });
-    const rowOrder = rows.map((row) => row.id);
-    const workingMap = new Map(rows.map((row) => [row.id, row]));
-    let completed = 0;
-
-    // 批量派发最新快照
-    const flushUpdates = () => {
-      rafIdRef.current = null;
-      if (pendingUpdateIdsRef.current.size === 0) {
-        return;
-      }
-      const snapshot = rowOrder.map((id) => workingMap.get(id)!);
-      pendingUpdateIdsRef.current.clear();
-      dispatch({
-        type: "rdap/update",
-        payload: { rows: snapshot, checked: completed }
-      });
-    };
-
-    // 触发节流回调，确保固定频率派发
-    const scheduleFlush = () => {
-      if (rafIdRef.current !== null) {
-        return;
-      }
-      rafIdRef.current = requestAnimationFrame(flushUpdates);
-    };
-
-    // 单个任务完成后仅更新 Map 并记录待派发行
-    const updateSnapshot = (updatedRow: DomainCheckRow) => {
-      workingMap.set(updatedRow.id, updatedRow);
-      completed += 1;
-      pendingUpdateIdsRef.current.add(updatedRow.id);
-      scheduleFlush();
-    };
-
-    try {
-      // 控制并发执行 RDAP 请求，全部完成后再落盘
-      await Promise.all(
-        rdapCandidates.map((candidate) =>
-          enqueue(async () => {
-            try {
-              const rdapResult = await runRdapQuery(candidate.ascii, {
-                useProxy: settings.useProxy
-              });
-              if (rdapResult.unsupported && settings.enableWhoisFallback) {
-                // TODO: integrate WHOIS fallback for unsupported TLDs
-              }
-              const nextDetail = mergeDetails(
-                mergeDetails(candidate.detail, sourceDetail),
-                t(rdapResult.detailKey, rdapResult.detailParams)
-              );
-              const nextRow: DomainCheckRow = {
-                ...candidate,
-                rdap: rdapResult.status,
-                verdict: deriveVerdictWithRdap(candidate.dns, rdapResult),
-                detail: nextDetail
-              };
-              updateSnapshot(nextRow);
-            } catch (error) {
-              console.error("runRdapQuery error", error);
-              const nextRow: DomainCheckRow = {
-                ...candidate,
-                rdap: candidate.rdap,
-                verdict: deriveVerdictWithRdap(candidate.dns, null),
-                detail: mergeDetails(candidate.detail, t("rdap.detail.network-error"))
-              };
-              updateSnapshot(nextRow);
-            }
-          })
-        )
-      );
-
-      flushUpdates();
-      const finalRows = rowOrder.map((id) => workingMap.get(id)!);
-      dispatch({ type: "process/complete", payload: { rows: finalRows } });
-      dispatch({
-        type: "ui/snackbar",
-        payload: { severity: "success", messageKey: "page.rdap.snackbar.success" }
-      });
-    } catch (error) {
-      console.error("RDAP execution failed", error);
-      flushUpdates();
-      dispatch({ type: "rdap/error", payload: { messageKey: "rdap.error.general" } });
-      dispatch({
-        type: "ui/snackbar",
-        payload: { severity: "error", messageKey: "rdap.error.general" }
-      });
-    }
-  }, [
-    rows,
-    rdapCandidates,
-    dispatch,
-    enqueue,
-    settings.enableWhoisFallback,
-    settings.useProxy,
-    t
-  ]);
+    await runRdapBatch(failedRdapRows, "page.rdap.snackbar.retrySuccess");
+  }, [failedRdapRows, runRdapBatch]);
 
   return (
     <>
@@ -321,6 +357,13 @@ export default function RdapPage() {
             disabled={rdap.running || rdapCandidates.length === 0}
           >
             {t("page.rdap.action.run")}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={handleRetryFailed}
+            disabled={rdap.running || !hasFailedRdapRows}
+          >
+            {t("page.rdap.action.retryFailed", { count: failedRdapCount })}
           </Button>
           <Button variant="text" onClick={() => dispatch({ type: "process/reset" })}>
             {t("page.rdap.action.reset")}
@@ -419,20 +462,22 @@ interface RdapStatsSummary {
   rateLimited: number;
 }
 
-function buildRdapStats(
-  candidates: DomainCheckRow[],
-  checked: number
-): RdapStatsSummary {
+function buildRdapStats(candidates: DomainCheckRow[]): RdapStatsSummary {
   const summary: RdapStatsSummary = {
     total: candidates.length,
-    checked,
-    pending: Math.max(candidates.length - checked, 0),
+    checked: 0,
+    pending: 0,
     available: 0,
     taken: 0,
     rateLimited: 0
   };
 
   candidates.forEach((row) => {
+    if (row.rdap !== null) {
+      summary.checked += 1;
+    } else {
+      summary.pending += 1;
+    }
     if (row.verdict === "available") {
       summary.available += 1;
     }
