@@ -12,18 +12,21 @@ import { useTranslation } from "react-i18next";
 import { alpha } from "@mui/material/styles";
 
 import { StatsCard, HintCard } from "../components/SidebarCards";
-import { useWideShellSidebar } from "../layouts/WideShell";
+import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 import { useConcurrentQueue } from "../shared/hooks/useConcurrentQueue";
 import type { DomainCheckRow } from "../shared/types";
 import { buildCsvContent, downloadCsv } from "../shared/utils/csv";
-import { runDohQuery } from "../shared/utils/dohQuery";
+import { runDohQueryWithRetry } from "../shared/utils/dohQuery";
 import {
   deriveDnsVerdict,
   mergeDetails,
   shouldRunRdap
 } from "../shared/utils/checkPipeline";
 import { dnsStatusToChipProps, verdictToChipProps } from "../shared/utils/status";
+
+const DNS_RETRY_ATTEMPTS = 3;
+const DNS_RETRY_DELAY_MS = 400;
 
 /**
  * DNS 预筛页面。
@@ -42,6 +45,12 @@ export default function DnsPage() {
     }
     return Math.min(100, Math.round((dns.completedCount / dns.totalCount) * 100));
   }, [dns.completedCount, dns.totalCount]);
+
+  const failedDnsCount = useMemo(
+    () => dns.rows.reduce((acc, row) => (row.dns === "error" ? acc + 1 : acc), 0),
+    [dns.rows]
+  );
+  const hasFailedDnsRows = failedDnsCount > 0;
 
   const columns = useMemo<GridColDef[]>(
     () => [
@@ -165,6 +174,66 @@ export default function DnsPage() {
 
   useWideShellSidebar(sidebarContent);
 
+  const executeDnsBatch = useCallback(
+    async (
+      targets: DomainCheckRow[],
+      baseRows: DomainCheckRow[],
+      runId: number
+    ): Promise<{ nextRows: DomainCheckRow[]; requiresRdap: boolean }> => {
+      // 使用 Map 缓存行数据，便于并发更新
+      const rowOrder = baseRows.map((row) => row.id);
+      const workingMap = new Map(baseRows.map((row) => [row.id, { ...row }]));
+      let completed = 0;
+
+      await Promise.all(
+        targets.map((target) =>
+          enqueue(async () => {
+            const baseRow = workingMap.get(target.id) ?? { ...target };
+            try {
+              const result = await runDohQueryWithRetry(target.ascii, settings.dohProviders, {
+                attempts: DNS_RETRY_ATTEMPTS,
+                delayMs: DNS_RETRY_DELAY_MS
+              });
+              const providerLabel = result.provider
+                ? t(`dns.provider.${result.provider}`)
+                : t("dns.provider.unknown");
+              const detailText = mergeDetails(
+                result.detail ? t(result.detail) : undefined,
+                t("dns.detail.source", { provider: providerLabel })
+              );
+
+              workingMap.set(target.id, {
+                ...baseRow,
+                dns: result.status,
+                rdap: null,
+                verdict: deriveDnsVerdict(result.status),
+                detail: detailText
+              });
+            } catch (error) {
+              console.error("runDohQuery error", error);
+              workingMap.set(target.id, {
+                ...baseRow,
+                dns: "error" as const,
+                rdap: null,
+                verdict: "undetermined" as const,
+                detail: t("dns.detail.network-error")
+              });
+            } finally {
+              // 记录已完成数量并同步到全局状态，驱动进度条
+              completed += 1;
+              dispatch({ type: "dns/progress", payload: { runId, completed } });
+            }
+          })
+        )
+      );
+
+      const nextRows = rowOrder.map((id) => workingMap.get(id)!);
+      const requiresRdap = nextRows.some((row) => shouldRunRdap(row.dns));
+      return { nextRows, requiresRdap };
+    },
+    [dispatch, enqueue, settings.dohProviders, t]
+  );
+
   const handleExport = useCallback(() => {
     if (dns.rows.length === 0) {
       dispatch({
@@ -196,10 +265,10 @@ export default function DnsPage() {
     const total = input.domains.length;
     dispatch({ type: "dns/start", payload: { runId, total } });
 
-    // 预生成表格基础行，便于后续填充查询结果
     const baseRows = input.domains.map((domain) => {
       const ascii = domain.ascii;
-      const tld = domain.tld ?? (ascii.includes(".") ? ascii.substring(ascii.lastIndexOf(".") + 1) : "");
+      const tld =
+        domain.tld ?? (ascii.includes(".") ? ascii.substring(ascii.lastIndexOf(".") + 1) : "");
       return {
         id: ascii,
         domain: domain.display,
@@ -209,53 +278,14 @@ export default function DnsPage() {
         rdap: null,
         verdict: "undetermined" as const,
         detail: undefined
-      };
+      } satisfies DomainCheckRow;
     });
 
     try {
-      // 使用受限并发执行 DoH 查询，避免瞬时请求过多
-      const nextRows: DomainCheckRow[] = new Array(baseRows.length);
-      let completed = 0;
-      await Promise.all(
-        baseRows.map((row, index) =>
-          enqueue(async () => {
-            try {
-              const result = await runDohQuery(row.ascii, settings.dohProviders);
-              const providerLabel = result.provider
-                ? t(`dns.provider.${result.provider}`)
-                : t("dns.provider.unknown");
-              const detailText = mergeDetails(
-                result.detail ? t(result.detail) : undefined,
-                t("dns.detail.source", { provider: providerLabel })
-              );
-
-              const dnsStatus = result.status;
-              nextRows[index] = {
-                ...row,
-                dns: dnsStatus,
-                verdict: deriveDnsVerdict(dnsStatus),
-                detail: detailText
-              };
-            } catch (error) {
-              console.error("runDohQuery error", error);
-              nextRows[index] = {
-                ...row,
-                dns: "error" as const,
-                verdict: "undetermined" as const,
-                detail: t("dns.detail.network-error")
-              };
-            } finally {
-              // 记录已完成数量并同步到全局状态，驱动进度条
-              completed += 1;
-              dispatch({ type: "dns/progress", payload: { runId, completed } });
-            }
-          })
-        )
-      );
+      const { nextRows, requiresRdap } = await executeDnsBatch(baseRows, baseRows, runId);
 
       dispatch({ type: "dns/success", payload: { rows: nextRows, runId } });
 
-      const requiresRdap = nextRows.some((row) => shouldRunRdap(row.dns));
       if (!requiresRdap) {
         dispatch({ type: "process/complete", payload: { rows: nextRows } });
       }
@@ -272,7 +302,42 @@ export default function DnsPage() {
         payload: { severity: "error", messageKey: "dns.error.general" }
       });
     }
-  }, [dispatch, enqueue, input.domains, settings.dohProviders, t]);
+  }, [dispatch, executeDnsBatch, input.domains]);
+
+  const handleRetryFailed = useCallback(async () => {
+    const failedIds = new Set(dns.rows.filter((row) => row.dns === "error").map((row) => row.id));
+    if (failedIds.size === 0) {
+      return;
+    }
+
+    const baseRows = dns.rows.map((row) => ({ ...row }));
+    const targets = baseRows.filter((row) => failedIds.has(row.id));
+
+    const runId = Date.now();
+    dispatch({ type: "dns/retry", payload: { runId, total: targets.length } });
+
+    try {
+      const { nextRows, requiresRdap } = await executeDnsBatch(targets, baseRows, runId);
+
+      dispatch({ type: "dns/success", payload: { rows: nextRows, runId } });
+
+      if (!requiresRdap) {
+        dispatch({ type: "process/complete", payload: { rows: nextRows } });
+      }
+
+      dispatch({
+        type: "ui/snackbar",
+        payload: { severity: "success", messageKey: "page.dns.snackbar.retrySuccess" }
+      });
+    } catch (error) {
+      console.error("DNS retry failed", error);
+      dispatch({ type: "dns/error", payload: { messageKey: "dns.error.general", runId } });
+      dispatch({
+        type: "ui/snackbar",
+        payload: { severity: "error", messageKey: "dns.error.general" }
+      });
+    }
+  }, [dispatch, dns.rows, executeDnsBatch]);
 
   return (
     <Stack spacing={3}>
@@ -305,6 +370,13 @@ export default function DnsPage() {
               disabled={dns.stage === "dns-checking"}
             >
               {t("dns.run")}
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleRetryFailed}
+              disabled={dns.stage === "dns-checking" || !hasFailedDnsRows}
+            >
+              {t("page.dns.action.retryFailed", { count: failedDnsCount })}
             </Button>
             <Button
               variant="outlined"

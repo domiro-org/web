@@ -1,10 +1,19 @@
 import type { RdapCheckResult } from "../types";
 
+import { delay } from "./async";
+
 const RDAP_BASE_ENDPOINT = "https://rdap.org/domain/";
 
 interface RdapQueryOptions {
   /** 是否通过代理请求 RDAP */
   useProxy?: boolean;
+}
+
+interface RdapRetryOptions extends RdapQueryOptions {
+  /** 最大自动重试次数（包含首次调用） */
+  attempts?: number;
+  /** 每轮基础等待时间（毫秒），将按尝试次数线性递增 */
+  delayMs?: number;
 }
 
 interface RdapSuccessResponse {
@@ -108,6 +117,58 @@ export async function runRdapQuery(
     detailKey: "rdap.detail.http-error",
     detailParams: { status: response.status }
   } satisfies RdapCheckResult;
+}
+
+/**
+ * 在 RDAP 查询基础上增加自动重试逻辑，对 429/网络错误进行退避重试。
+ * @param domain ASCII 域名
+ * @param options 代理与重试配置
+ */
+export async function runRdapQueryWithRetry(
+  domain: string,
+  options?: RdapRetryOptions
+): Promise<RdapCheckResult> {
+  const { attempts: attemptOverride, delayMs: delayOverride, ...queryOptions } = options ?? {};
+  const attempts = Math.max(attemptOverride ?? 3, 1);
+  const baseDelay = Math.max(delayOverride ?? 1000, 0);
+  let lastError: unknown;
+  let lastResult: RdapCheckResult | null = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const result = await runRdapQuery(domain, queryOptions);
+      if (result.status === 429 && attempt < attempts) {
+        lastResult = result;
+        const retryAfterRaw = result.detailParams?.retryAfter;
+        // 如果 Retry-After 可解析为数字，则优先使用服务端建议的等待秒数
+        const retryAfterSeconds =
+          typeof retryAfterRaw === "number"
+            ? retryAfterRaw
+            : typeof retryAfterRaw === "string"
+              ? Number.parseFloat(retryAfterRaw)
+              : Number.NaN;
+        const waitMs =
+          Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+            ? retryAfterSeconds * 1000
+            : baseDelay * attempt;
+        await delay(waitMs);
+        continue;
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) {
+        throw error;
+      }
+      await delay(baseDelay * attempt);
+    }
+  }
+
+  if (lastResult) {
+    return lastResult;
+  }
+
+  throw lastError ?? new Error("RDAP query failed");
 }
 
 /**

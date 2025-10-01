@@ -44,6 +44,7 @@ const defaultState: AppState = {
   },
   rdap: {
     checkedCount: 0,
+    totalCount: 0,
     running: false,
     errorKey: null
   },
@@ -177,6 +178,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 /**
  * 读取全局 AppState。
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppState(): AppState {
   return useContext(AppStateContext);
 }
@@ -184,6 +186,7 @@ export function useAppState(): AppState {
 /**
  * 获取全局 dispatch。
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppDispatch(): Dispatch<AppAction> {
   return useContext(AppDispatchContext);
 }
@@ -218,6 +221,7 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           },
           rdap: {
             checkedCount: 0,
+            totalCount: 0,
             running: false,
             errorKey: null
           }
@@ -247,6 +251,7 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           },
           rdap: {
             checkedCount: 0,
+            totalCount: 0,
             running: false,
             errorKey: null
           }
@@ -284,6 +289,27 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           },
           rdap: {
             checkedCount: 0,
+            totalCount: 0,
+            running: false,
+            errorKey: null
+          }
+        } satisfies AppState;
+      }
+      case "dns/retry": {
+        return {
+          ...state,
+          dns: {
+            ...state.dns,
+            stage: "dns-checking",
+            errorKey: null,
+            runId: action.payload.runId,
+            completedAt: null,
+            totalCount: action.payload.total,
+            completedCount: 0
+          },
+          rdap: {
+            checkedCount: 0,
+            totalCount: 0,
             running: false,
             errorKey: null
           }
@@ -309,6 +335,7 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           ...state,
           dns: {
             ...state.dns,
+            stage: state.rdap.running ? "rdap-checking" : "done",
             rows: action.payload.rows,
             completedAt: Date.now(),
             completedCount: state.dns.totalCount
@@ -338,7 +365,9 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           rdap: {
             ...state.rdap,
             running: true,
-            errorKey: null
+            errorKey: null,
+            checkedCount: 0,
+            totalCount: action.payload.total
           }
         } satisfies AppState;
       }

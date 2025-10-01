@@ -119,7 +119,6 @@ export async function readCsvFile(file: File, options: CsvReadOptions = {}): Pro
 
     // 大文件时定期让出事件循环，避免阻塞 UI
     if (batchSize > 0 && index > 0 && index % batchSize === 0) {
-      // eslint-disable-next-line no-await-in-loop
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 0);
       });

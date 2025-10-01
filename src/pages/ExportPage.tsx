@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import type { TFunction } from "i18next";
 
-import { useWideShellSidebar } from "../layouts/WideShell";
+import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 import type { DomainCheckRow, DohProviderId } from "../shared/types";
 import { buildCsvContent, downloadCsv } from "../shared/utils/csv";

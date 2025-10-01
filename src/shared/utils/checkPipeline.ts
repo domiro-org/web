@@ -30,10 +30,20 @@ export function mergeDetails(
   baseDetail?: string,
   appendDetail?: string
 ): string | undefined {
-  if (baseDetail && appendDetail) {
-    return `${baseDetail} · ${appendDetail}`;
+  if (!appendDetail) {
+    return baseDetail;
   }
-  return appendDetail ?? baseDetail;
+
+  if (!baseDetail) {
+    return appendDetail;
+  }
+
+  const segments = baseDetail.split("·").map((segment) => segment.trim()).filter(Boolean);
+  if (segments.includes(appendDetail)) {
+    return baseDetail;
+  }
+
+  return `${baseDetail} · ${appendDetail}`;
 }
 
 /**
