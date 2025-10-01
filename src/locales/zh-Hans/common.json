@@ -162,6 +162,8 @@
   "page.export.settings.providerError": "至少保留一个提供商。",
   "page.export.settings.rdapConcurrency": "RDAP 并发数",
   "page.export.settings.rdapHelper": "当前值：同时 {{value}} 个请求。",
+  "page.export.settings.dnsConcurrency": "DNS 并发数",
+  "page.export.settings.dnsHelper": "当前值：同时 {{value}} 个 DNS 查询。",
   "page.export.settings.proxy": "通过代理转发请求",
   "page.export.settings.whois": "RDAP 不支持时启用 WHOIS 兜底",
   "page.export.sidebar.title": "会话概览",

@@ -162,6 +162,8 @@
   "page.export.settings.providerError": "Keep at least one provider active.",
   "page.export.settings.rdapConcurrency": "RDAP concurrency",
   "page.export.settings.rdapHelper": "Current value: {{value}} request(s) at a time.",
+  "page.export.settings.dnsConcurrency": "DNS concurrency",
+  "page.export.settings.dnsHelper": "Current value: {{value}} DNS lookups in parallel.",
   "page.export.settings.proxy": "Route requests through proxy",
   "page.export.settings.whois": "Enable WHOIS fallback when RDAP is unsupported",
   "page.export.sidebar.title": "Session overview",

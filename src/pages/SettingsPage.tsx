@@ -24,6 +24,11 @@ import type { DohProviderId } from "../shared/types";
 //
 
 const PROVIDER_ORDER: DohProviderId[] = ["google", "cloudflare"]; // 展示顺序固定
+const DNS_CONCURRENCY_MARKS = [
+  { value: 200, label: "200" },
+  { value: 1000, label: "1000" },
+  { value: 5000, label: "5000" }
+];
 
 /**
  * 设置页，提供运行参数配置。
@@ -56,10 +61,19 @@ export default function SettingsPage() {
   );
 
   // RDAP 并发滑块
-  const handleConcurrencyChange = useCallback(
+  const handleRdapConcurrencyChange = useCallback(
     (_event: Event, value: number | number[]) => {
       const nextValue = Array.isArray(value) ? value[0] : value;
       dispatch({ type: "settings/update", payload: { rdapConcurrency: nextValue } });
+    },
+    [dispatch]
+  );
+
+  // DNS 并发滑块
+  const handleDnsConcurrencyChange = useCallback(
+    (_event: Event, value: number | number[]) => {
+      const nextValue = Array.isArray(value) ? value[0] : value;
+      dispatch({ type: "settings/update", payload: { dnsConcurrency: nextValue } });
     },
     [dispatch]
   );
@@ -84,6 +98,10 @@ export default function SettingsPage() {
   const rdapHelperText = useMemo(
     () => t("page.export.settings.rdapHelper", { value: settings.rdapConcurrency }),
     [settings.rdapConcurrency, t]
+  );
+  const dnsHelperText = useMemo(
+    () => t("page.export.settings.dnsHelper", { value: settings.dnsConcurrency }),
+    [settings.dnsConcurrency, t]
   );
 
   return (
@@ -150,7 +168,27 @@ export default function SettingsPage() {
             step={1}
             marks
             valueLabelDisplay="auto"
-            onChange={handleConcurrencyChange}
+            onChange={handleRdapConcurrencyChange}
+          />
+        </Box>
+
+        <Box>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <FormLabel component="legend">
+              {t("page.export.settings.dnsConcurrency")}
+            </FormLabel>
+            <Typography variant="body2" color="text.secondary">
+              {dnsHelperText}
+            </Typography>
+          </Stack>
+          <Slider
+            value={settings.dnsConcurrency}
+            min={200}
+            max={5000}
+            step={100}
+            marks={DNS_CONCURRENCY_MARKS}
+            valueLabelDisplay="auto"
+            onChange={handleDnsConcurrencyChange}
           />
         </Box>
 
