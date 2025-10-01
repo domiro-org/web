@@ -7,13 +7,14 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { alpha } from "@mui/material/styles";
 
 import { StatsCard, HintCard } from "../components/SidebarCards";
 import { useWideShellSidebar } from "../layouts/WideShell";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
+import { useConcurrentQueue } from "../shared/hooks/useConcurrentQueue";
 import type { DomainCheckRow } from "../shared/types";
 import { buildCsvContent, downloadCsv } from "../shared/utils/csv";
 import { runDohQuery } from "../shared/utils/dohQuery";
@@ -31,6 +32,9 @@ export default function DnsPage() {
   const { t } = useTranslation();
   const { input, dns, settings } = useAppState();
   const dispatch = useAppDispatch();
+  const { enqueue, clear } = useConcurrentQueue(settings.dnsConcurrency);
+
+  useEffect(() => clear, [clear]);
   const progressValue = useMemo(() => {
     if (dns.totalCount === 0) {
       return 0;
@@ -191,6 +195,8 @@ export default function DnsPage() {
     const total = input.domains.length;
     dispatch({ type: "dns/start", payload: { runId, total } });
 
+    clear();
+
     // 预生成表格基础行，便于后续填充查询结果
     const baseRows = input.domains.map((domain) => {
       const ascii = domain.ascii;
@@ -207,43 +213,45 @@ export default function DnsPage() {
       };
     });
 
-    try {
-      // 使用 Promise.all 并行执行 DoH 查询，加快批量处理速度
+      try {
+        // 使用 Promise.all 搭配并发队列执行 DoH 查询，平衡速率与吞吐
       const nextRows: DomainCheckRow[] = new Array(baseRows.length);
       let completed = 0;
       await Promise.all(
-        baseRows.map(async (row, index) => {
-          try {
-            const result = await runDohQuery(row.ascii, settings.dohProviders);
-            const providerLabel = result.provider
-              ? t(`dns.provider.${result.provider}`)
-              : t("dns.provider.unknown");
-            const detailText = mergeDetails(
-              result.detail ? t(result.detail) : undefined,
-              t("dns.detail.source", { provider: providerLabel })
-            );
+        baseRows.map((row, index) =>
+          enqueue(async () => {
+            try {
+              const result = await runDohQuery(row.ascii, settings.dohProviders);
+              const providerLabel = result.provider
+                ? t(`dns.provider.${result.provider}`)
+                : t("dns.provider.unknown");
+              const detailText = mergeDetails(
+                result.detail ? t(result.detail) : undefined,
+                t("dns.detail.source", { provider: providerLabel })
+              );
 
-            const dnsStatus = result.status;
-            nextRows[index] = {
-              ...row,
-              dns: dnsStatus,
-              verdict: deriveDnsVerdict(dnsStatus),
-              detail: detailText
-            };
-          } catch (error) {
-            console.error("runDohQuery error", error);
-            nextRows[index] = {
-              ...row,
-              dns: "error" as const,
-              verdict: "undetermined" as const,
-              detail: t("dns.detail.network-error")
-            };
-          } finally {
-            // 记录已完成数量并同步到全局状态，驱动进度条
-            completed += 1;
-            dispatch({ type: "dns/progress", payload: { runId, completed } });
-          }
-        })
+              const dnsStatus = result.status;
+              nextRows[index] = {
+                ...row,
+                dns: dnsStatus,
+                verdict: deriveDnsVerdict(dnsStatus),
+                detail: detailText
+              };
+            } catch (error) {
+              console.error("runDohQuery error", error);
+              nextRows[index] = {
+                ...row,
+                dns: "error" as const,
+                verdict: "undetermined" as const,
+                detail: t("dns.detail.network-error")
+              };
+            } finally {
+              // 记录已完成数量并同步到全局状态，驱动进度条
+              completed += 1;
+              dispatch({ type: "dns/progress", payload: { runId, completed } });
+            }
+          })
+        )
       );
 
       dispatch({ type: "dns/success", payload: { rows: nextRows, runId } });
@@ -265,7 +273,7 @@ export default function DnsPage() {
         payload: { severity: "error", messageKey: "dns.error.general" }
       });
     }
-  }, [dispatch, input.domains, settings.dohProviders, t]);
+  }, [clear, dispatch, input.domains, settings.dohProviders, t]);
 
   return (
     <Stack spacing={3}>

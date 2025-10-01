@@ -21,6 +21,7 @@ import {
 
 const defaultSettings: AppSettings = {
   rdapConcurrency: 3,
+  dnsConcurrency: 1000,
   dohProviders: ["google", "cloudflare"],
   useProxy: false,
   enableWhoisFallback: false
@@ -592,9 +593,13 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const concurrency = Number.isFinite(settings.rdapConcurrency)
     ? Math.min(Math.max(Math.trunc(settings.rdapConcurrency), 1), 12)
     : defaultSettings.rdapConcurrency;
+  const dnsConcurrency = Number.isFinite(settings.dnsConcurrency)
+    ? Math.min(Math.max(Math.trunc(settings.dnsConcurrency), 200), 5000)
+    : defaultSettings.dnsConcurrency;
 
   return {
     rdapConcurrency: concurrency,
+    dnsConcurrency,
     dohProviders: safeProviders,
     useProxy: Boolean(settings.useProxy),
     enableWhoisFallback: Boolean(settings.enableWhoisFallback)
@@ -607,6 +612,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
 function areSettingsEqual(a: AppSettings, b: AppSettings): boolean {
   return (
     a.rdapConcurrency === b.rdapConcurrency &&
+    a.dnsConcurrency === b.dnsConcurrency &&
     a.useProxy === b.useProxy &&
     a.enableWhoisFallback === b.enableWhoisFallback &&
     a.dohProviders.length === b.dohProviders.length &&

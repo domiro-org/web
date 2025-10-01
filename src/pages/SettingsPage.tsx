@@ -64,6 +64,15 @@ export default function SettingsPage() {
     [dispatch]
   );
 
+  // DNS 并发滑块
+  const handleDnsConcurrencyChange = useCallback(
+    (_event: Event, value: number | number[]) => {
+      const nextValue = Array.isArray(value) ? value[0] : value;
+      dispatch({ type: "settings/update", payload: { dnsConcurrency: nextValue } });
+    },
+    [dispatch]
+  );
+
   // 代理开关
   const handleProxyToggle = useCallback(
     (_event: ChangeEvent<HTMLInputElement>, checked: boolean) => {
@@ -84,6 +93,10 @@ export default function SettingsPage() {
   const rdapHelperText = useMemo(
     () => t("page.export.settings.rdapHelper", { value: settings.rdapConcurrency }),
     [settings.rdapConcurrency, t]
+  );
+  const dnsHelperText = useMemo(
+    () => t("page.export.settings.dnsHelper", { value: settings.dnsConcurrency }),
+    [settings.dnsConcurrency, t]
   );
 
   return (
@@ -151,6 +164,25 @@ export default function SettingsPage() {
             marks
             valueLabelDisplay="auto"
             onChange={handleConcurrencyChange}
+          />
+        </Box>
+
+        <Box>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <FormLabel component="legend">
+              {t("page.export.settings.dnsConcurrency")}
+            </FormLabel>
+            <Typography variant="body2" color="text.secondary">
+              {dnsHelperText}
+            </Typography>
+          </Stack>
+          <Slider
+            value={settings.dnsConcurrency}
+            min={200}
+            max={5000}
+            step={100}
+            valueLabelDisplay="auto"
+            onChange={handleDnsConcurrencyChange}
           />
         </Box>
 

@@ -80,6 +80,8 @@ export type DohProviderId = "google" | "cloudflare";
 export interface AppSettings {
   /** RDAP 查询最大并发数 */
   rdapConcurrency: number;
+  /** DNS 查询最大并发数 */
+  dnsConcurrency: number;
   /** DoH 查询使用的提供者顺序 */
   dohProviders: DohProviderId[];
   /** 是否通过代理中转网络请求 */
