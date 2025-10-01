@@ -139,8 +139,18 @@ export async function runRdapQueryWithRetry(
       const result = await runRdapQuery(domain, queryOptions);
       if (result.status === 429 && attempt < attempts) {
         lastResult = result;
-        const retryAfter = result.detailParams?.retryAfter;
-        const waitMs = retryAfter ? retryAfter * 1000 : baseDelay * attempt;
+        const retryAfterRaw = result.detailParams?.retryAfter;
+        // 如果 Retry-After 可解析为数字，则优先使用服务端建议的等待秒数
+        const retryAfterSeconds =
+          typeof retryAfterRaw === "number"
+            ? retryAfterRaw
+            : typeof retryAfterRaw === "string"
+              ? Number.parseFloat(retryAfterRaw)
+              : Number.NaN;
+        const waitMs =
+          Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+            ? retryAfterSeconds * 1000
+            : baseDelay * attempt;
         await delay(waitMs);
         continue;
       }
