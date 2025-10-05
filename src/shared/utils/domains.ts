@@ -25,17 +25,18 @@ export function partitionByExisting(
   domains: DomainItem[],
   existing: Set<string>
 ): PartitionResult {
-  const seen = new Set(existing);
+  const batchSeen = new Set<string>();
   const fresh: DomainItem[] = [];
   const duplicate: DomainItem[] = [];
 
   for (const domain of domains) {
-    if (seen.has(domain.ascii)) {
+    // 先检测外部集合与本批次局部集合，避免重复添加
+    if (existing.has(domain.ascii) || batchSeen.has(domain.ascii)) {
       duplicate.push(domain);
       continue;
     }
 
-    seen.add(domain.ascii);
+    batchSeen.add(domain.ascii);
     fresh.push(domain);
   }
 
