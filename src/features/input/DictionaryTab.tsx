@@ -182,14 +182,16 @@ export default function DictionaryTab() {
           </Select>
         </FormControl>
 
-        <TextField
-          type="number"
-          label={t("input.dict.length")}
-          value={length}
-          onChange={(event) => setLength(Number(event.target.value))}
-          inputProps={{ min: MIN_LENGTH, max: MAX_LENGTH }}
-          size="small"
-        />
+        {pattern !== "template" ? (
+          <TextField
+            type="number"
+            label={t("input.dict.length")}
+            value={length}
+            onChange={(event) => setLength(Number(event.target.value))}
+            inputProps={{ min: MIN_LENGTH, max: MAX_LENGTH }}
+            size="small"
+          />
+        ) : null}
 
         <TextField
           label={t("input.dict.tld")}
@@ -267,7 +269,10 @@ function validateInputs(
   tld: string,
   template: string
 ): ValidationResult {
-  if (!Number.isInteger(length) || length < MIN_LENGTH || length > MAX_LENGTH) {
+  if (
+    pattern !== "template" &&
+    (!Number.isInteger(length) || length < MIN_LENGTH || length > MAX_LENGTH)
+  ) {
     return { valid: false, errorKey: "input.dict.invalidLength" };
   }
 
