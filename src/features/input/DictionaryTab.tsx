@@ -22,12 +22,14 @@ import { createAsciiSet, partitionByExisting, sanitizeTld } from "../../shared/u
 const DIGITS = "0123456789";
 const LETTERS = "abcdefghijklmnopqrstuvwxyz";
 const ALNUM = `${DIGITS}${LETTERS}`;
+const LETTER_CHARSET = LETTERS.split("");
+const ALNUM_CHARSET = ALNUM.split("");
 
 const PREVIEW_COUNT = 20;
 const MIN_LENGTH = 1;
 const MAX_LENGTH = 63;
 
-type PatternType = "numeric" | "alnum" | "template";
+type PatternType = "numeric" | "alpha" | "alnum" | "template";
 
 interface GenerationSummary {
   generated: number;
@@ -174,6 +176,7 @@ export default function DictionaryTab() {
             onChange={(event) => handlePatternChange(event.target.value as PatternType)}
           >
             <MenuItem value="numeric">{t("input.dict.numericN")}</MenuItem>
+            <MenuItem value="alpha">{t("input.dict.alphaN")}</MenuItem>
             <MenuItem value="alnum">{t("input.dict.alnumN")}</MenuItem>
             <MenuItem value="template">{t("input.dict.template")}</MenuItem>
           </Select>
@@ -268,7 +271,7 @@ function validateInputs(
     return { valid: false, errorKey: "input.dict.invalidLength" };
   }
 
-  if ((pattern === "numeric" || pattern === "alnum") && sanitizeTld(tld).length === 0) {
+  if (pattern !== "template" && sanitizeTld(tld).length === 0) {
     return { valid: false, errorKey: "input.dict.invalidTld" };
   }
 
@@ -291,6 +294,8 @@ async function generateDomains(
   switch (pattern) {
     case "numeric":
       return generateNumeric(length, tld, limit);
+    case "alpha":
+      return generateAlpha(length, tld, limit);
     case "alnum":
       return generateAlnum(length, tld, limit);
     case "template":
@@ -322,7 +327,20 @@ async function generateNumeric(length: number, tld: string, limit?: number): Pro
   return result;
 }
 
+async function generateAlpha(length: number, tld: string, limit?: number): Promise<string[]> {
+  return generateByCharset(LETTER_CHARSET, length, tld, limit);
+}
+
 async function generateAlnum(length: number, tld: string, limit?: number): Promise<string[]> {
+  return generateByCharset(ALNUM_CHARSET, length, tld, limit);
+}
+
+async function generateByCharset(
+  charset: string[],
+  length: number,
+  tld: string,
+  limit?: number
+): Promise<string[]> {
   if (length <= 0) {
     return [];
   }
@@ -331,15 +349,15 @@ async function generateAlnum(length: number, tld: string, limit?: number): Promi
   const counters = new Array(length).fill(0);
   const maxIterations = limit ?? Number.POSITIVE_INFINITY;
 
-  // 逐位枚举所有可能组合，未设置 limit 时输出完整笛卡尔积
+  // 使用计数器逐位枚举给定字符集的笛卡尔积，保证生成顺序稳定
   for (let generated = 0; generated < maxIterations; generated += 1) {
-    const label = counters.map((index) => ALNUM[index]).join("");
+    const label = counters.map((index) => charset[index]).join("");
     result.push(applyTld(label, tld));
 
     let pointer = length - 1;
     while (pointer >= 0) {
       counters[pointer] += 1;
-      if (counters[pointer] < ALNUM.length) {
+      if (counters[pointer] < charset.length) {
         break;
       }
 

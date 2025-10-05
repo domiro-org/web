@@ -35,6 +35,7 @@
   "input.dict.desc": "Generate pattern-based domains. Example: 000000.xyz to 999999.xyz.",
   "input.dict.patternType": "Pattern",
   "input.dict.numericN": "Numeric (N digits)",
+  "input.dict.alphaN": "Alphabetic (random)",
   "input.dict.alnumN": "Alphanumeric (random)",
   "input.dict.template": "Custom template",
   "input.dict.length": "Length (N)",

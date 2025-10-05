@@ -35,6 +35,7 @@
   "input.dict.desc": "按模式生成批量域名，例如：000000.xyz 至 999999.xyz。",
   "input.dict.patternType": "生成模式",
   "input.dict.numericN": "纯数字（固定位数）",
+  "input.dict.alphaN": "纯字母（随机）",
   "input.dict.alnumN": "字母数字混合（随机）",
   "input.dict.template": "自定义模板",
   "input.dict.length": "位数 N",
