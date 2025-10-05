@@ -6,7 +6,7 @@ import {
   PERSIST_INPUT_PAYLOAD_THRESHOLD
 } from "../useAppState";
 
-import type { AppState } from "../types";
+import type { AppState } from "../../types";
 
 const baseInput: AppState["input"] = {
   domains: [],
