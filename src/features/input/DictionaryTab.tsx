@@ -12,7 +12,7 @@ import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAppDispatch, useAppState } from "../../shared/hooks/useAppState";
@@ -26,6 +26,7 @@ const LETTER_CHARSET = LETTERS.split("");
 const ALNUM_CHARSET = ALNUM.split("");
 
 const PREVIEW_COUNT = 20;
+const GENERATION_BATCH_SIZE = 2000;
 const MIN_LENGTH = 1;
 const MAX_LENGTH = 63;
 
@@ -51,8 +52,19 @@ export default function DictionaryTab() {
   const [preview, setPreview] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [summary, setSummary] = useState<GenerationSummary | null>(null);
+  const [progress, setProgress] = useState<{ total: number | null; generated: number } | null>(
+    null
+  );
+
+  const abortRef = useRef<AbortController | null>(null);
 
   const existingAscii = useMemo(() => createAsciiSet(input.domains), [input.domains]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const handlePatternChange = useCallback((value: PatternType) => {
     setPattern(value);
@@ -72,17 +84,31 @@ export default function DictionaryTab() {
 
     setLoading(true);
     setSummary(null);
+    setProgress(null);
     try {
       const sanitizedTld = sanitizeTld(tld);
-      const domains = await generateDomains(
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const generator = generateDomains(
         {
           pattern,
           length,
           template,
           tld: sanitizedTld
         },
-        PREVIEW_COUNT
+        { limit: PREVIEW_COUNT, batchSize: PREVIEW_COUNT, signal: controller.signal }
       );
+
+      const domains: string[] = [];
+      for await (const batch of generator) {
+        domains.push(...batch);
+        if (domains.length >= PREVIEW_COUNT) {
+          break;
+        }
+      }
+
       setPreview(domains.slice(0, PREVIEW_COUNT));
     } catch (error) {
       console.error("dictionary preview failed", error);
@@ -92,6 +118,7 @@ export default function DictionaryTab() {
       });
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   }, [dispatch, length, pattern, tld, template]);
 
@@ -106,49 +133,101 @@ export default function DictionaryTab() {
     }
 
     setLoading(true);
+    setSummary(null);
     try {
       const sanitizedTld = sanitizeTld(tld);
-      const domains = await generateDomains({
-        pattern,
-        length,
-        template,
-        tld: sanitizedTld
-      });
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-      const { valid, invalid, duplicate } = normalizeDomains(domains);
-      const { fresh, duplicate: existingDuplicate } = partitionByExisting(valid, existingAscii);
+      const totalEstimate = estimateTotalCount({ pattern, length, template });
+      setProgress({ total: totalEstimate, generated: 0 });
 
-      if (fresh.length === 0) {
+      const asciiSet = new Set(existingAscii);
+      const generator = generateDomains(
+        {
+          pattern,
+          length,
+          template,
+          tld: sanitizedTld
+        },
+        { batchSize: GENERATION_BATCH_SIZE, signal: controller.signal }
+      );
+
+      let generatedCount = 0;
+      let addedCount = 0;
+      let invalidCount = 0;
+      let duplicateCount = 0;
+      let existingCount = 0;
+      let hasFresh = false;
+
+      for await (const batch of generator) {
+        generatedCount += batch.length;
+
+        const { valid, invalid, duplicate } = normalizeDomains(batch);
+        const { fresh, duplicate: existingDuplicate } = partitionByExisting(valid, asciiSet);
+
+        for (const item of fresh) {
+          asciiSet.add(item.ascii);
+        }
+
+        invalidCount += invalid.length;
+        duplicateCount += duplicate.length;
+        existingCount += existingDuplicate.length;
+        addedCount += fresh.length;
+
+        if (fresh.length > 0) {
+          hasFresh = true;
+          dispatch({ type: "input/appendDomainBatch", payload: { domains: fresh } });
+        }
+
+        setSummary({
+          generated: generatedCount,
+          added: addedCount,
+          duplicated: duplicateCount,
+          invalid: invalidCount,
+          existing: existingCount
+        });
+
+        setProgress((current) =>
+          current ? { total: current.total, generated: generatedCount } : current
+        );
+      }
+
+      if (addedCount > 0) {
+        dispatch({ type: "input/appendDomainBatchFinalize" });
+      }
+
+      if (!hasFresh) {
         dispatch({
           type: "ui/snackbar",
           payload: { severity: "info", messageKey: "input.dict.noNew" }
         });
         setSummary({
-          generated: domains.length,
+          generated: generatedCount,
           added: 0,
-          duplicated: duplicate.length,
-          invalid: invalid.length,
-          existing: existingDuplicate.length
+          duplicated: duplicateCount,
+          invalid: invalidCount,
+          existing: existingCount
         });
         return;
       }
 
-      dispatch({ type: "input/appendDomains", payload: { domains: fresh } });
       dispatch({
         type: "ui/snackbar",
         payload: {
           severity: "success",
           messageKey: "input.dict.added",
-          messageParams: { count: fresh.length }
+          messageParams: { count: addedCount }
         }
       });
 
       setSummary({
-        generated: domains.length,
-        added: fresh.length,
-        duplicated: duplicate.length,
-        invalid: invalid.length,
-        existing: existingDuplicate.length
+        generated: generatedCount,
+        added: addedCount,
+        duplicated: duplicateCount,
+        invalid: invalidCount,
+        existing: existingCount
       });
     } catch (error) {
       console.error("dictionary generation failed", error);
@@ -158,6 +237,8 @@ export default function DictionaryTab() {
       });
     } finally {
       setLoading(false);
+      setProgress(null);
+      abortRef.current = null;
     }
   }, [dispatch, existingAscii, length, pattern, tld, template]);
 
@@ -223,7 +304,28 @@ export default function DictionaryTab() {
         </Button>
       </Stack>
 
-      {loading ? <LinearProgress /> : null}
+      {progress ? (
+        <Box>
+          <LinearProgress
+            variant={progress.total !== null ? "determinate" : "indeterminate"}
+            value={
+              progress.total !== null
+                ? Math.min((progress.generated / progress.total) * 100, 100)
+                : undefined
+            }
+          />
+          <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+            {progress.total !== null
+              ? t("input.dict.progressWithTotal", {
+                  generated: progress.generated,
+                  total: progress.total
+                })
+              : t("input.dict.progress", { generated: progress.generated })}
+          </Typography>
+        </Box>
+      ) : null}
+
+      {loading && !progress ? <LinearProgress /> : null}
 
       {summary ? (
         <Alert severity={summary.added > 0 ? "success" : "info"}>
@@ -261,6 +363,12 @@ interface GenerateParams {
   tld: string;
 }
 
+interface GenerateOptions {
+  limit?: number;
+  batchSize?: number;
+  signal?: AbortSignal;
+}
+
 type ValidationResult = { valid: true } | { valid: false; errorKey: string };
 
 function validateInputs(
@@ -292,97 +400,135 @@ function validateInputs(
   return { valid: true };
 }
 
-async function generateDomains(
+async function* generateDomains(
   { pattern, length, template, tld }: GenerateParams,
-  limit?: number
-): Promise<string[]> {
+  options: GenerateOptions = {}
+): AsyncGenerator<string[], void, void> {
   switch (pattern) {
     case "numeric":
-      return generateNumeric(length, tld, limit);
+      yield* generateNumeric(length, tld, options);
+      break;
     case "alpha":
-      return generateAlpha(length, tld, limit);
+      yield* generateByCharset(LETTER_CHARSET, length, tld, options);
+      break;
     case "alnum":
-      return generateAlnum(length, tld, limit);
+      yield* generateByCharset(ALNUM_CHARSET, length, tld, options);
+      break;
     case "template":
-      return generateFromTemplate(template, tld, limit);
+      yield* generateFromTemplate(template, tld, options);
+      break;
     default:
-      return [];
+      return;
   }
 }
 
-async function generateNumeric(length: number, tld: string, limit?: number): Promise<string[]> {
+/**
+ * 逐批生成纯数字域名序列。
+ */
+async function* generateNumeric(
+  length: number,
+  tld: string,
+  { limit, batchSize = GENERATION_BATCH_SIZE, signal }: GenerateOptions
+): AsyncGenerator<string[], void, void> {
   const maxCombinations = Math.pow(10, length);
   const total = limit === undefined ? maxCombinations : Math.min(limit, maxCombinations);
-  const result: string[] = [];
-  const batchSize = 2000;
+  let produced = 0;
+  let batch: string[] = [];
 
-  for (let start = 0; start < total; start += batchSize) {
-    const end = Math.min(start + batchSize, total);
-    for (let value = start; value < end; value += 1) {
-      const label = value.toString().padStart(length, "0");
-      result.push(applyTld(label, tld));
+  while (produced < total) {
+    if (signal?.aborted) {
+      return;
     }
 
-    // 分批让出主线程
-    if (end < total) {
-      await delay();
+    const label = produced.toString().padStart(length, "0");
+    batch.push(applyTld(label, tld));
+    produced += 1;
+
+    const shouldFlush = batch.length >= batchSize || produced >= total;
+    if (shouldFlush) {
+      yield batch;
+      batch = [];
+      if (produced < total) {
+        await delay(signal);
+      }
     }
   }
 
-  return result;
+  if (batch.length > 0) {
+    yield batch;
+  }
 }
 
-async function generateAlpha(length: number, tld: string, limit?: number): Promise<string[]> {
-  return generateByCharset(LETTER_CHARSET, length, tld, limit);
-}
-
-async function generateAlnum(length: number, tld: string, limit?: number): Promise<string[]> {
-  return generateByCharset(ALNUM_CHARSET, length, tld, limit);
-}
-
-async function generateByCharset(
+/**
+ * 逐批生成指定字符集的笛卡尔积组合。
+ */
+async function* generateByCharset(
   charset: string[],
   length: number,
   tld: string,
-  limit?: number
-): Promise<string[]> {
+  { limit, batchSize = GENERATION_BATCH_SIZE, signal }: GenerateOptions
+): AsyncGenerator<string[], void, void> {
   if (length <= 0) {
-    return [];
+    return;
   }
 
-  const result: string[] = [];
+  const maxCombinations = Math.pow(charset.length, length);
+  const maxIterations = limit === undefined ? maxCombinations : Math.min(limit, maxCombinations);
   const counters = new Array(length).fill(0);
-  const maxIterations = limit ?? Number.POSITIVE_INFINITY;
+  let generated = 0;
+  let finished = false;
+  let batch: string[] = [];
 
-  // 使用计数器逐位枚举给定字符集的笛卡尔积，保证生成顺序稳定
-  for (let generated = 0; generated < maxIterations; generated += 1) {
+  while (!finished && generated < maxIterations) {
+    if (signal?.aborted) {
+      return;
+    }
+
     const label = counters.map((index) => charset[index]).join("");
-    result.push(applyTld(label, tld));
+    batch.push(applyTld(label, tld));
+    generated += 1;
 
-    let pointer = length - 1;
-    while (pointer >= 0) {
-      counters[pointer] += 1;
-      if (counters[pointer] < charset.length) {
-        break;
+    if (generated >= maxIterations) {
+      finished = true;
+    } else {
+      let pointer = length - 1;
+      while (pointer >= 0) {
+        counters[pointer] += 1;
+        if (counters[pointer] < charset.length) {
+          break;
+        }
+
+        counters[pointer] = 0;
+        pointer -= 1;
       }
 
-      counters[pointer] = 0;
-      pointer -= 1;
+      if (pointer < 0) {
+        finished = true;
+      }
     }
 
-    if (pointer < 0) {
-      break;
-    }
-
-    if ((generated + 1) % 2000 === 0) {
-      await delay();
+    if (batch.length >= batchSize || finished) {
+      yield batch;
+      batch = [];
+      if (!finished) {
+        await delay(signal);
+      }
     }
   }
 
-  return result;
+  if (batch.length > 0) {
+    yield batch;
+  }
 }
 
-async function generateFromTemplate(template: string, tld: string, limit?: number): Promise<string[]> {
+/**
+ * 逐批生成模板占位符组合。
+ */
+async function* generateFromTemplate(
+  template: string,
+  tld: string,
+  { limit, batchSize = GENERATION_BATCH_SIZE, signal }: GenerateOptions
+): AsyncGenerator<string[], void, void> {
   const tokens = parseTemplate(template);
   if (!tokens.valid) {
     throw new Error("invalid-template");
@@ -390,15 +536,23 @@ async function generateFromTemplate(template: string, tld: string, limit?: numbe
 
   const placeholders = tokens.placeholders;
   if (placeholders.length === 0) {
-    return [applyTld(template, tld)];
+    yield [applyTld(template, tld)];
+    return;
   }
 
   const lengths = placeholders.map((set) => set.length);
   const counters = new Array(placeholders.length).fill(0);
-  const result: string[] = [];
-  const maxIterations = limit ?? Number.POSITIVE_INFINITY;
+  const maxCombinations = lengths.reduce((acc, current) => acc * current, 1);
+  const maxIterations = limit === undefined ? maxCombinations : Math.min(limit, maxCombinations);
+  let generated = 0;
+  let finished = false;
+  let batch: string[] = [];
 
-  for (let generated = 0; generated < maxIterations; generated += 1) {
+  while (!finished && generated < maxIterations) {
+    if (signal?.aborted) {
+      return;
+    }
+
     const parts: string[] = [];
     let placeholderIndex = 0;
 
@@ -412,33 +566,89 @@ async function generateFromTemplate(template: string, tld: string, limit?: numbe
       placeholderIndex += 1;
     }
 
-    result.push(applyTld(parts.join(""), tld));
+    batch.push(applyTld(parts.join(""), tld));
+    generated += 1;
 
-    if (generated + 1 >= maxIterations) {
-      break;
-    }
+    if (generated >= maxIterations) {
+      finished = true;
+    } else {
+      let pointer = counters.length - 1;
+      while (pointer >= 0) {
+        counters[pointer] += 1;
+        if (counters[pointer] < lengths[pointer]) {
+          break;
+        }
 
-    let pointer = counters.length - 1;
-    while (pointer >= 0) {
-      counters[pointer] += 1;
-      if (counters[pointer] < lengths[pointer]) {
-        break;
+        counters[pointer] = 0;
+        pointer -= 1;
       }
 
-      counters[pointer] = 0;
-      pointer -= 1;
+      if (pointer < 0) {
+        finished = true;
+      }
     }
 
-    if (pointer < 0) {
-      break;
-    }
-
-    if ((generated + 1) % 2000 === 0) {
-      await delay();
+    if (batch.length >= batchSize || finished) {
+      yield batch;
+      batch = [];
+      if (!finished) {
+        await delay(signal);
+      }
     }
   }
 
-  return result;
+  if (batch.length > 0) {
+    yield batch;
+  }
+}
+
+/**
+ * 估算当前配置下的总组合数，用于进度显示。
+ */
+function estimateTotalCount({
+  pattern,
+  length,
+  template
+}: Omit<GenerateParams, "tld">): number | null {
+  switch (pattern) {
+    case "numeric":
+      return clampCombinationCount(Math.pow(10, length));
+    case "alpha":
+      return clampCombinationCount(Math.pow(LETTER_CHARSET.length, length));
+    case "alnum":
+      return clampCombinationCount(Math.pow(ALNUM_CHARSET.length, length));
+    case "template": {
+      const parsed = parseTemplate(template);
+      if (!parsed.valid) {
+        return null;
+      }
+
+      if (parsed.placeholders.length === 0) {
+        return 1;
+      }
+
+      let total = 1;
+      for (const set of parsed.placeholders) {
+        total = total * set.length;
+        if (!Number.isFinite(total) || total > Number.MAX_SAFE_INTEGER) {
+          return null;
+        }
+      }
+      return Math.floor(total);
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * 对组合总数进行安全裁剪，避免溢出。
+ */
+function clampCombinationCount(value: number): number | null {
+  if (!Number.isFinite(value) || value > Number.MAX_SAFE_INTEGER) {
+    return null;
+  }
+  return Math.floor(value);
 }
 
 function applyTld(label: string, tld: string): string {
@@ -516,8 +726,25 @@ function resolveCharset(token: string): string[] | null {
   }
 }
 
-function delay(): Promise<void> {
+/**
+ * 异步等待一个事件循环，用于让出主线程。
+ */
+function delay(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.resolve();
+  }
+
   return new Promise((resolve) => {
-    setTimeout(resolve, 0);
+    const timer = setTimeout(resolve, 0);
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    }
   });
 }

@@ -43,6 +43,8 @@
   "input.dict.templateLabel": "Template pattern",
   "input.dict.templateHint": "Use {n} for digits, {a} for letters, {al} for alphanumeric. Example: aa{n}{n}{n}.",
   "input.dict.summary": "Generated {{generated}} · Added {{added}} · Duplicates {{duplicate}} · Invalid {{invalid}}",
+  "input.dict.progress": "Processed {{generated}} domains...",
+  "input.dict.progressWithTotal": "Processed {{generated}} / {{total}} domains...",
   "input.dict.previewTitle": "Preview (first {{count}})",
   "input.dict.invalidLength": "Length must be between 1 and 63.",
   "input.dict.invalidTld": "Provide a valid TLD (e.g. com or xyz).",
