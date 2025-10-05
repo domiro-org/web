@@ -227,7 +227,8 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           }
         } satisfies AppState;
       }
-      case "input/appendDomains": {
+      case "input/appendDomains":
+      case "input/appendDomainBatch": {
         const { domains: merged, added } = mergeDomains(state.input.domains, action.payload.domains);
         if (added === 0) {
           return state;
