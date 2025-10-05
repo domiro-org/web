@@ -60,9 +60,19 @@ const AppDispatchContext = createContext<Dispatch<AppAction>>(() => {
 });
 
 /**
+ * 当域名数量超过阈值时不再尝试持久化，避免触发配额上限。
+ */
+export const PERSIST_INPUT_DOMAIN_THRESHOLD = 50_000;
+
+/**
+ * 当序列化后的长度接近 sessionStorage 配额时直接跳过写入。
+ */
+export const PERSIST_INPUT_PAYLOAD_THRESHOLD = 2.5 * 1024 * 1024;
+
+/**
  * 将输入状态持久化到 sessionStorage，避免刷新丢失。
  */
-function persistInput(value: AppState["input"]): void {
+export function persistInput(value: AppState["input"]): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -72,7 +82,56 @@ function persistInput(value: AppState["input"]): void {
     updatedAt: value.updatedAt
   });
 
-  window.sessionStorage.setItem(SESSION_STORAGE_KEY, payload);
+  const domainCount = value.domains.length;
+  const payloadLength = payload.length;
+
+  if (
+    domainCount > PERSIST_INPUT_DOMAIN_THRESHOLD ||
+    payloadLength > PERSIST_INPUT_PAYLOAD_THRESHOLD
+  ) {
+    // 输入过大时直接跳过，以免阻塞 UI 或触发白屏
+    console.warn(
+      "Skipped persisting input because payload exceeds safe threshold",
+      {
+        domainCount,
+        payloadLength
+      }
+    );
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, payload);
+  } catch (error) {
+    if (isQuotaExceededError(error)) {
+      // 写入失败时提示用户数据未能保存，但不中断页面逻辑
+      console.warn("Failed to persist input due to sessionStorage quota", error);
+      return;
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * 判断是否命中 sessionStorage 空间不足的错误。
+ */
+function isQuotaExceededError(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+
+  if (error instanceof DOMException) {
+    return (
+      error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      // 兼容部分旧版浏览器使用的 code 值
+      error.code === 22 ||
+      error.code === 1014
+    );
+  }
+
+  return false;
 }
 
 /**
