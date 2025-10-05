@@ -6,9 +6,11 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useTheme } from "@mui/material/styles";
 
 import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
@@ -43,6 +45,8 @@ export default function RdapPage() {
   const { enqueue, clear } = useConcurrentQueue(settings.rdapConcurrency);
   const pendingUpdateIdsRef = useRef<Set<string>>(new Set());
   const rafIdRef = useRef<number | null>(null);
+  const theme = useTheme();
+  const isXs = useMediaQuery(theme.breakpoints.down("sm"));
 
   useEffect(() => clear, [clear]);
 
@@ -80,7 +84,7 @@ export default function RdapPage() {
         field: "domain",
         headerName: t("dns.table.domain"),
         flex: 1.3,
-        minWidth: 200,
+        minWidth: isXs ? 160 : 200,
         renderCell: (params) => (
           <Stack spacing={0.5}>
             <Typography variant="body2">{params.row.domain}</Typography>
@@ -96,7 +100,7 @@ export default function RdapPage() {
         field: "dns",
         headerName: t("dns.table.dns"),
         flex: 1,
-        minWidth: 150,
+        minWidth: isXs ? 120 : 150,
         renderCell: (params) => (
           <Chip
             label={t(`dns.status.${params.row.dns}`)}
@@ -109,7 +113,7 @@ export default function RdapPage() {
         field: "rdap",
         headerName: t("page.rdap.table.rdap"),
         flex: 1,
-        minWidth: 140,
+        minWidth: isXs ? 110 : 140,
         renderCell: (params) => (
           <Chip
             label={params.row.rdap === null
@@ -124,7 +128,7 @@ export default function RdapPage() {
         field: "verdict",
         headerName: t("dns.table.verdict"),
         flex: 1,
-        minWidth: 160,
+        minWidth: isXs ? 120 : 160,
         renderCell: (params) => (
           <Chip
             label={t(`verdict.${params.row.verdict}`)}
@@ -139,7 +143,8 @@ export default function RdapPage() {
         headerName: t("dns.table.detail"),
         flex: 2,
         sortable: false,
-        minWidth: 260,
+        minWidth: isXs ? undefined : 260,
+        hide: isXs,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.row.detail ?? t("dns.table.detail-empty")}
@@ -147,7 +152,7 @@ export default function RdapPage() {
         )
       }
     ],
-    [t]
+    [isXs, t]
   );
 
   const stats = useMemo(() => buildRdapStats(rdapCandidates), [rdapCandidates]);

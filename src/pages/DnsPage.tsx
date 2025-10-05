@@ -6,10 +6,11 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { alpha } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import { StatsCard, HintCard } from "../components/SidebarCards";
 import { useWideShellSidebar } from "../layouts/WideShellContext";
@@ -36,6 +37,8 @@ export default function DnsPage() {
   const { input, dns, settings } = useAppState();
   const dispatch = useAppDispatch();
   const { enqueue, clear } = useConcurrentQueue(settings.dnsConcurrency);
+  const theme = useTheme();
+  const isXs = useMediaQuery(theme.breakpoints.down("sm"));
 
   // 卸载时清理并发队列，避免残留任务
   useEffect(() => clear, [clear]);
@@ -58,7 +61,7 @@ export default function DnsPage() {
         field: "domain",
         headerName: t("dns.table.domain"),
         flex: 1.5,
-        minWidth: 200,
+        minWidth: isXs ? 160 : 200,
         renderCell: (params) => (
           <Stack spacing={0.5}>
             <Typography variant="body2">{params.row.domain}</Typography>
@@ -74,7 +77,7 @@ export default function DnsPage() {
         field: "dns",
         headerName: t("dns.table.dns"),
         flex: 1,
-        minWidth: 160,
+        minWidth: isXs ? 120 : 160,
         renderCell: (params) => {
           const chipMeta = dnsStatusToChipProps(params.row.dns);
           return (
@@ -91,7 +94,7 @@ export default function DnsPage() {
         field: "verdict",
         headerName: t("dns.table.verdict"),
         flex: 1,
-        minWidth: 160,
+        minWidth: isXs ? 120 : 160,
         renderCell: (params) => {
           const chipMeta = verdictToChipProps(params.row.verdict);
           return (
@@ -109,7 +112,8 @@ export default function DnsPage() {
         headerName: t("dns.table.detail"),
         flex: 2,
         sortable: false,
-        minWidth: 240,
+        minWidth: isXs ? undefined : 240,
+        hide: isXs,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.row.detail ?? t("dns.table.detail-empty")}
@@ -117,7 +121,7 @@ export default function DnsPage() {
         )
       }
     ],
-    [t]
+    [isXs, t]
   );
 
   const csvColumns = useMemo(
