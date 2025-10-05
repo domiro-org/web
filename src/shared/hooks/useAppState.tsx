@@ -257,6 +257,41 @@ function createReducer(): (state: AppState, action: AppAction) => AppState {
           }
         } satisfies AppState;
       }
+      case "input/appendDomainBatch": {
+        const { domains: merged, added } = mergeDomains(state.input.domains, action.payload.domains);
+        if (added === 0) {
+          return state;
+        }
+
+        return {
+          ...state,
+          input: {
+            domains: merged,
+            updatedAt: Date.now()
+          }
+        } satisfies AppState;
+      }
+      case "input/appendDomainBatchFinalize": {
+        return {
+          ...state,
+          dns: {
+            ...state.dns,
+            stage: "idle",
+            rows: [],
+            errorKey: null,
+            runId: state.dns.runId + 1,
+            completedAt: null,
+            totalCount: 0,
+            completedCount: 0
+          },
+          rdap: {
+            checkedCount: 0,
+            totalCount: 0,
+            running: false,
+            errorKey: null
+          }
+        } satisfies AppState;
+      }
       case "input/clear": {
         if (state.input.domains.length === 0) {
           return state;

@@ -225,6 +225,8 @@ export interface AppState {
 export type AppAction =
   | { type: "input/setDomains"; payload: { domains: DomainItem[] } }
   | { type: "input/appendDomains"; payload: { domains: DomainItem[] } }
+  | { type: "input/appendDomainBatch"; payload: { domains: DomainItem[] } }
+  | { type: "input/appendDomainBatchFinalize" }
   | { type: "input/clear" }
   | { type: "dns/start"; payload: { runId: number; total: number } }
   | { type: "dns/retry"; payload: { runId: number; total: number } }
