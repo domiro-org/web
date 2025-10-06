@@ -60,12 +60,13 @@ export default function DnsPage() {
       {
         field: "domain",
         headerName: t("dns.table.domain"),
-        flex: 1.5,
-        minWidth: isXs ? 160 : 200,
+        // 移动端收紧列宽，确保总宽度不超过视口
+        flex: isXs ? 1.2 : 1.5,
+        minWidth: isXs ? 140 : 200,
         renderCell: (params) => (
           <Stack spacing={0.5}>
             <Typography variant="body2">{params.row.domain}</Typography>
-            {params.row.ascii !== params.row.domain ? (
+            {!isXs && params.row.ascii !== params.row.domain ? (
               <Typography variant="caption" color="text.secondary">
                 {params.row.ascii}
               </Typography>
@@ -76,8 +77,8 @@ export default function DnsPage() {
       {
         field: "dns",
         headerName: t("dns.table.dns"),
-        flex: 1,
-        minWidth: isXs ? 120 : 160,
+        flex: isXs ? 0.9 : 1,
+        minWidth: isXs ? 100 : 160,
         renderCell: (params) => {
           const chipMeta = dnsStatusToChipProps(params.row.dns);
           return (
@@ -93,8 +94,8 @@ export default function DnsPage() {
       {
         field: "verdict",
         headerName: t("dns.table.verdict"),
-        flex: 1,
-        minWidth: isXs ? 120 : 160,
+        flex: isXs ? 0.9 : 1,
+        minWidth: isXs ? 100 : 160,
         renderCell: (params) => {
           const chipMeta = verdictToChipProps(params.row.verdict);
           return (
@@ -458,7 +459,7 @@ export default function DnsPage() {
               footerTotalRows: t("dns.table.total", { count: dns.rows.length })
             }}
             sx={{
-              minWidth: isXs ? 600 : undefined,
+              // 窄屏不再强制额外最小宽度，按列定义自适应
               border: 0,
               "& .MuiDataGrid-columnHeaders": {
                 position: "sticky",

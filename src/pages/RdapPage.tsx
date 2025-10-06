@@ -83,12 +83,13 @@ export default function RdapPage() {
       {
         field: "domain",
         headerName: t("dns.table.domain"),
-        flex: 1.3,
-        minWidth: isXs ? 160 : 200,
+        // 调整移动端列宽，避免在小视口下溢出
+        flex: isXs ? 1.1 : 1.3,
+        minWidth: isXs ? 140 : 200,
         renderCell: (params) => (
           <Stack spacing={0.5}>
             <Typography variant="body2">{params.row.domain}</Typography>
-            {params.row.ascii !== params.row.domain ? (
+            {!isXs && params.row.ascii !== params.row.domain ? (
               <Typography variant="caption" color="text.secondary">
                 {params.row.ascii}
               </Typography>
@@ -99,8 +100,8 @@ export default function RdapPage() {
       {
         field: "dns",
         headerName: t("dns.table.dns"),
-        flex: 1,
-        minWidth: isXs ? 120 : 150,
+        flex: isXs ? 0.9 : 1,
+        minWidth: isXs ? 95 : 150,
         renderCell: (params) => (
           <Chip
             label={t(`dns.status.${params.row.dns}`)}
@@ -112,8 +113,8 @@ export default function RdapPage() {
       {
         field: "rdap",
         headerName: t("page.rdap.table.rdap"),
-        flex: 1,
-        minWidth: isXs ? 110 : 140,
+        flex: isXs ? 0.85 : 1,
+        minWidth: isXs ? 90 : 140,
         renderCell: (params) => (
           <Chip
             label={params.row.rdap === null
@@ -127,8 +128,8 @@ export default function RdapPage() {
       {
         field: "verdict",
         headerName: t("dns.table.verdict"),
-        flex: 1,
-        minWidth: isXs ? 120 : 160,
+        flex: isXs ? 0.9 : 1,
+        minWidth: isXs ? 95 : 160,
         renderCell: (params) => (
           <Chip
             label={t(`verdict.${params.row.verdict}`)}
@@ -428,7 +429,7 @@ export default function RdapPage() {
               footerTotalRows: t("page.rdap.table.total", { count: rdapCandidates.length })
             }}
             sx={{
-              minWidth: isXs ? 600 : undefined,
+              // 小屏仅保留列自身的最小宽度设置，防止额外溢出
               flexGrow: 1,
               border: "none",
               "& .MuiDataGrid-columnHeaders": {
