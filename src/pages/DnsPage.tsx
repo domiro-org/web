@@ -436,7 +436,7 @@ export default function DnsPage() {
         </Box>
         <Box
           // 仅在表格区域滚动，保持顶部工具区稳定
-          sx={{ height: "calc(100vh - 220px)", overflow: "auto" }}
+          sx={{ height: "calc(100vh - 220px)", overflowY: "auto", overflowX: "auto" }}
         >
           <DataGrid
             rows={dns.rows}
@@ -458,6 +458,7 @@ export default function DnsPage() {
               footerTotalRows: t("dns.table.total", { count: dns.rows.length })
             }}
             sx={{
+              minWidth: isXs ? 600 : undefined,
               border: 0,
               "& .MuiDataGrid-columnHeaders": {
                 position: "sticky",

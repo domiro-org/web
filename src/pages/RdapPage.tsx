@@ -404,7 +404,14 @@ export default function RdapPage() {
             {t("page.rdap.table.title")}
           </Typography>
         </Box>
-        <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+        <Box
+          sx={{
+            flexGrow: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "auto"
+          }}
+        >
           <DataGrid
             rows={rdapCandidates}
             columns={columns}
@@ -421,6 +428,7 @@ export default function RdapPage() {
               footerTotalRows: t("page.rdap.table.total", { count: rdapCandidates.length })
             }}
             sx={{
+              minWidth: isXs ? 600 : undefined,
               flexGrow: 1,
               border: "none",
               "& .MuiDataGrid-columnHeaders": {
