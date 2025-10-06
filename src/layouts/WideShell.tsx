@@ -4,7 +4,6 @@ import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
-import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
@@ -237,13 +236,25 @@ export default function WideShell({ children }: PropsWithChildren) {
               minHeight: 0
             }}
           >
-            <Grid container spacing={3} alignItems="flex-start" sx={{ flexGrow: 1 }}>
-              <Grid size={{ xs: 12, lg: 9 }} sx={{ minHeight: 0 }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "minmax(0, 1fr)",
+                  lg: "minmax(0, 3fr) minmax(0, 1fr)"
+                },
+                alignItems: "flex-start",
+                gap: 3,
+                flexGrow: 1,
+                minHeight: 0
+              }}
+            >
+              <Box sx={{ minHeight: 0 }}>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 3, minHeight: 0 }}>
                   {children}
                 </Box>
-              </Grid>
-              <Grid size={{ xs: 12, lg: 3 }} sx={{ minHeight: 0 }}>
+              </Box>
+              <Box sx={{ minHeight: 0 }}>
                 <Box
                   // 右侧栏在大屏保持可见，贴合原型要求
                   sx={{
@@ -256,8 +267,8 @@ export default function WideShell({ children }: PropsWithChildren) {
                 >
                   {sidebarContent ?? <DefaultSidebar />}
                 </Box>
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Container>
         </Box>
       </Box>
