@@ -121,6 +121,8 @@ export interface RdapCheckResult {
   detailKey: string;
   /** 详情参数 */
   detailParams?: Record<string, string | number>;
+  /** 实际请求的 RDAP 服务标识（用于展示） */
+  serviceUrl?: string;
 }
 
 /**

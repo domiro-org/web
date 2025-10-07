@@ -205,8 +205,7 @@ export default function RdapPage() {
       }
       dispatch({ type: "rdap/start", payload: { total: targets.length } });
 
-      const sourceLabel = t("rdap.source.rdap-org");
-      const sourceDetail = t("rdap.detail.source", { source: sourceLabel });
+      const baseSourceLabel = t("rdap.source.iana-bootstrap");
       const rowOrder = rows.map((row) => row.id);
       const workingMap = new Map(rows.map((row) => [row.id, { ...row }]));
       let completed = 0;
@@ -256,8 +255,14 @@ export default function RdapPage() {
                 if (rdapResult.unsupported && settings.enableWhoisFallback) {
                   // TODO: integrate WHOIS fallback for unsupported TLDs
                 }
+                // 根据实际服务端拼接来源提示，便于排查不同 TLD 的 RDAP 服务
+                const dynamicSourceDetail = t("rdap.detail.source", {
+                  source: rdapResult.serviceUrl
+                    ? `${baseSourceLabel} · ${rdapResult.serviceUrl}`
+                    : baseSourceLabel
+                });
                 const nextDetail = mergeDetails(
-                  mergeDetails(baseRow.detail, sourceDetail),
+                  mergeDetails(baseRow.detail, dynamicSourceDetail),
                   t(rdapResult.detailKey, rdapResult.detailParams)
                 );
                 const nextRow: DomainCheckRow = {
