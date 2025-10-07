@@ -57,6 +57,7 @@ export async function runRdapQuery(
   }
 
   let lastNetworkError: unknown;
+  let lastFailedResult: RdapCheckResult | null = null;
 
   for (const candidate of candidates) {
     try {
@@ -102,32 +103,36 @@ export async function runRdapQuery(
       }
 
       if (response.status === 501 || response.status === 400 || response.status === 405) {
-        return {
+        lastFailedResult = {
           status: response.status,
           available: null,
           unsupported: true,
           detailKey: "rdap.detail.unsupported",
           serviceUrl: candidate.serviceDisplay ?? undefined
         } satisfies RdapCheckResult;
+        continue;
       }
 
       if (response.status >= 500) {
-        return {
+        lastFailedResult = {
           status: response.status,
           available: null,
           detailKey: "rdap.detail.server-error",
           detailParams: { status: response.status },
           serviceUrl: candidate.serviceDisplay ?? undefined
         } satisfies RdapCheckResult;
+        continue;
       }
 
-      return {
+      lastFailedResult = {
         status: response.status,
         available: null,
         detailKey: "rdap.detail.http-error",
         detailParams: { status: response.status },
         serviceUrl: candidate.serviceDisplay ?? undefined
       } satisfies RdapCheckResult;
+      // 若返回状态不在预期范围内，尝试下一个候选端点
+      continue;
     } catch (error) {
       lastNetworkError = error;
       // 记录最后一次网络异常并继续尝试后续端点
@@ -136,6 +141,10 @@ export async function runRdapQuery(
 
   if (lastNetworkError) {
     throw lastNetworkError;
+  }
+
+  if (lastFailedResult) {
+    return lastFailedResult;
   }
 
   throw new Error("RDAP query failed");
