@@ -2,7 +2,7 @@ import type { RdapCheckResult } from "../types";
 
 import { delay } from "./async";
 
-const RDAP_BASE_ENDPOINT = "https://rdap.org/domain/";
+const IANA_RDAP_BOOTSTRAP_ENDPOINT = "https://data.iana.org/rdap/dns.json";
 
 interface RdapQueryOptions {
   /** 是否通过代理请求 RDAP */
@@ -21,32 +21,23 @@ interface RdapSuccessResponse {
   status?: string[];
 }
 
-/**
- * 解析 Retry-After 头部返回等待秒数。
- */
-function parseRetryAfter(value: string | null): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const numericValue = Number(value);
-  if (!Number.isNaN(numericValue)) {
-    return numericValue;
-  }
-
-  const dateValue = Date.parse(value);
-  if (!Number.isNaN(dateValue)) {
-    const deltaMs = dateValue - Date.now();
-    if (deltaMs > 0) {
-      return Math.round(deltaMs / 1000);
-    }
-  }
-
-  return undefined;
+interface RdapEndpointCandidate {
+  url: string;
+  serviceDisplay: string | null;
 }
 
+type RdapBootstrapService = [string[], string[]];
+
+interface RdapBootstrapFile {
+  services: RdapBootstrapService[];
+}
+
+type RdapServiceIndex = Map<string, string[]>;
+
+let rdapServiceIndexPromise: Promise<RdapServiceIndex> | null = null;
+
 /**
- * 调用 RDAP.org 查询域名注册状态并返回标准化结果。
+ * 调用 TLD 对应的 RDAP 服务查询域名注册状态并返回标准化结果。
  * @param domain ASCII 形式的域名
  * @returns RDAP 查询结果结构
  */
@@ -54,69 +45,100 @@ export async function runRdapQuery(
   domain: string,
   options?: RdapQueryOptions
 ): Promise<RdapCheckResult> {
-  const url = resolveEndpoint(domain, options?.useProxy);
+  const candidates = await resolveEndpointCandidates(domain, options?.useProxy);
 
-  const response = await fetch(url, {
-    headers: { Accept: "application/rdap+json, application/json" }
-  });
-
-  if (response.status === 404) {
+  if (candidates.length === 0) {
     return {
-      status: 404,
-      available: true,
-      detailKey: "rdap.detail.status-404"
-    } satisfies RdapCheckResult;
-  }
-
-  if (response.status === 429) {
-    const retryAfter = parseRetryAfter(response.headers.get("retry-after"));
-    return {
-      status: 429,
-      available: null,
-      detailKey: retryAfter
-        ? "rdap.detail.status-429-wait"
-        : "rdap.detail.status-429",
-      detailParams: retryAfter ? { retryAfter } : undefined
-    } satisfies RdapCheckResult;
-  }
-
-  if (response.status === 200) {
-    const data = (await response.json()) as RdapSuccessResponse;
-    const isDomainObject = data.objectClassName === "domain";
-
-    return {
-      status: 200,
-      available: isDomainObject ? false : null,
-      detailKey: isDomainObject
-        ? "rdap.detail.status-200"
-        : "rdap.detail.unexpected-object"
-    } satisfies RdapCheckResult;
-  }
-
-  if (response.status === 501 || response.status === 400 || response.status === 405) {
-    return {
-      status: response.status,
+      status: 0,
       available: null,
       unsupported: true,
-      detailKey: "rdap.detail.unsupported"
+      detailKey: "rdap.detail.bootstrap-missing"
     } satisfies RdapCheckResult;
   }
 
-  if (response.status >= 500) {
-    return {
-      status: response.status,
-      available: null,
-      detailKey: "rdap.detail.server-error",
-      detailParams: { status: response.status }
-    } satisfies RdapCheckResult;
+  let lastNetworkError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      // 逐个尝试候选 RDAP 端点，遇到网络错误则切换下一项
+      const response = await fetch(candidate.url, {
+        headers: { Accept: "application/rdap+json, application/json" }
+      });
+
+      if (response.status === 404) {
+        return {
+          status: 404,
+          available: true,
+          detailKey: "rdap.detail.status-404",
+          serviceUrl: candidate.serviceDisplay ?? undefined
+        } satisfies RdapCheckResult;
+      }
+
+      if (response.status === 429) {
+        const retryAfter = parseRetryAfter(response.headers.get("retry-after"));
+        return {
+          status: 429,
+          available: null,
+          detailKey: retryAfter
+            ? "rdap.detail.status-429-wait"
+            : "rdap.detail.status-429",
+          detailParams: retryAfter ? { retryAfter } : undefined,
+          serviceUrl: candidate.serviceDisplay ?? undefined
+        } satisfies RdapCheckResult;
+      }
+
+      if (response.status === 200) {
+        const data = (await response.json()) as RdapSuccessResponse;
+        const isDomainObject = data.objectClassName === "domain";
+
+        return {
+          status: 200,
+          available: isDomainObject ? false : null,
+          detailKey: isDomainObject
+            ? "rdap.detail.status-200"
+            : "rdap.detail.unexpected-object",
+          serviceUrl: candidate.serviceDisplay ?? undefined
+        } satisfies RdapCheckResult;
+      }
+
+      if (response.status === 501 || response.status === 400 || response.status === 405) {
+        return {
+          status: response.status,
+          available: null,
+          unsupported: true,
+          detailKey: "rdap.detail.unsupported",
+          serviceUrl: candidate.serviceDisplay ?? undefined
+        } satisfies RdapCheckResult;
+      }
+
+      if (response.status >= 500) {
+        return {
+          status: response.status,
+          available: null,
+          detailKey: "rdap.detail.server-error",
+          detailParams: { status: response.status },
+          serviceUrl: candidate.serviceDisplay ?? undefined
+        } satisfies RdapCheckResult;
+      }
+
+      return {
+        status: response.status,
+        available: null,
+        detailKey: "rdap.detail.http-error",
+        detailParams: { status: response.status },
+        serviceUrl: candidate.serviceDisplay ?? undefined
+      } satisfies RdapCheckResult;
+    } catch (error) {
+      lastNetworkError = error;
+      // 记录最后一次网络异常并继续尝试后续端点
+    }
   }
 
-  return {
-    status: response.status,
-    available: null,
-    detailKey: "rdap.detail.http-error",
-    detailParams: { status: response.status }
-  } satisfies RdapCheckResult;
+  if (lastNetworkError) {
+    throw lastNetworkError;
+  }
+
+  throw new Error("RDAP query failed");
 }
 
 /**
@@ -172,16 +194,130 @@ export async function runRdapQueryWithRetry(
 }
 
 /**
- * 根据设置决定 RDAP 请求的实际端点。
+ * 解析 Retry-After 头部返回等待秒数。
  */
-function resolveEndpoint(domain: string, useProxy?: boolean): string {
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isNaN(numericValue)) {
+    return numericValue;
+  }
+
+  const dateValue = Date.parse(value);
+  if (!Number.isNaN(dateValue)) {
+    const deltaMs = dateValue - Date.now();
+    if (deltaMs > 0) {
+      return Math.round(deltaMs / 1000);
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 根据设置决定 RDAP 请求的实际端点列表。
+ */
+async function resolveEndpointCandidates(
+  domain: string,
+  useProxy?: boolean
+): Promise<RdapEndpointCandidate[]> {
+  const tld = extractTld(domain);
+  if (!tld) {
+    return [];
+  }
+
+  const index = await loadRdapServiceIndex();
+  const serviceUrls = index.get(tld);
+
+  if (!serviceUrls || serviceUrls.length === 0) {
+    return [];
+  }
+
+  const serviceDisplay = formatServiceDisplay(serviceUrls[0] ?? "");
+
   if (useProxy) {
     const proxyBase = import.meta.env.VITE_API_PROXY;
     if (proxyBase) {
       const normalized = proxyBase.endsWith("/") ? proxyBase.slice(0, -1) : proxyBase;
-      return `${normalized}/rdap?domain=${encodeURIComponent(domain)}`;
+      return [
+        {
+          url: `${normalized}/rdap?domain=${encodeURIComponent(domain)}`,
+          serviceDisplay
+        }
+      ];
     }
   }
 
-  return `${RDAP_BASE_ENDPOINT}${encodeURIComponent(domain)}`;
+  // 直接访问各个 RDAP 服务端点
+  return serviceUrls.map((serviceUrl) => ({
+    url: buildDomainQueryUrl(serviceUrl, domain),
+    serviceDisplay: formatServiceDisplay(serviceUrl)
+  }));
+}
+
+/**
+ * 加载并缓存 IANA RDAP 引导文件，返回按 TLD 索引的服务列表。
+ */
+async function loadRdapServiceIndex(): Promise<RdapServiceIndex> {
+  if (!rdapServiceIndexPromise) {
+    rdapServiceIndexPromise = fetch(IANA_RDAP_BOOTSTRAP_ENDPOINT)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load RDAP bootstrap: ${response.status}`);
+        }
+        const data = (await response.json()) as RdapBootstrapFile;
+        const index: RdapServiceIndex = new Map();
+
+        // 遍历所有服务记录，将 TLD 映射到其对应的 RDAP 服务地址列表
+        for (const [tlds, urls] of data.services) {
+          for (const rawTld of tlds) {
+            index.set(rawTld.toLowerCase(), urls);
+          }
+        }
+
+        return index;
+      })
+      .catch((error) => {
+        rdapServiceIndexPromise = null;
+        throw error;
+      });
+  }
+
+  return rdapServiceIndexPromise;
+}
+
+/**
+ * 构造指定 RDAP 服务的 domain 查询 URL。
+ */
+function buildDomainQueryUrl(serviceUrl: string, domain: string): string {
+  const normalized = serviceUrl.endsWith("/") ? serviceUrl : `${serviceUrl}/`;
+  return `${normalized}domain/${encodeURIComponent(domain)}`;
+}
+
+/**
+ * 解析域名提取 TLD（转为小写）。
+ */
+function extractTld(domain: string): string | null {
+  const parts = domain.toLowerCase().split(".");
+  if (parts.length === 0) {
+    return null;
+  }
+  const last = parts[parts.length - 1];
+  return last || null;
+}
+
+/**
+ * 将 RDAP 服务地址格式化为可读展示内容。
+ */
+function formatServiceDisplay(serviceUrl: string): string | null {
+  try {
+    const parsed = new URL(serviceUrl);
+    return parsed.host || serviceUrl;
+  } catch (error) {
+    // 若解析失败则退回原始地址
+    return serviceUrl || null;
+  }
 }
