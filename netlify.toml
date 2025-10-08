@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  ENABLE_UMAMI = "false"
+  UMAMI_SRC = "https://umami.alexma.top/script.js"
+  UMAMI_SITE_ID = "99c45cb5-27da-401e-91f6-a264580de03a"
+
+[context.production.environment]
+  ENABLE_UMAMI = "true"
+
+[context.deploy-preview.environment]
+  ENABLE_UMAMI = "false"
+
+[context.branch-deploy.environment]
+  ENABLE_UMAMI = "false"
