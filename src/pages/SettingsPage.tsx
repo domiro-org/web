@@ -8,7 +8,6 @@ import FormLabel from "@mui/material/FormLabel";
 import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
-import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import type { ChangeEvent } from "react";
 import { useCallback, useMemo, useState } from "react";
@@ -19,7 +18,7 @@ import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 import type { DohProviderId } from "../shared/types";
 
 //
-// 设置页：承载运行参数（DoH、RDAP 并发、代理与 WHOIS 兜底）
+// 设置页：承载运行参数（DoH 与 DNS/RDAP 并发）
 // 该内容从“导出结果”页面迁移至此，便于信息架构更清晰。
 //
 
@@ -74,22 +73,6 @@ export default function SettingsPage() {
     (_event: Event, value: number | number[]) => {
       const nextValue = Array.isArray(value) ? value[0] : value;
       dispatch({ type: "settings/update", payload: { dnsConcurrency: nextValue } });
-    },
-    [dispatch]
-  );
-
-  // 代理开关
-  const handleProxyToggle = useCallback(
-    (_event: ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      dispatch({ type: "settings/update", payload: { useProxy: checked } });
-    },
-    [dispatch]
-  );
-
-  // WHOIS 兜底开关
-  const handleWhoisToggle = useCallback(
-    (_event: ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      dispatch({ type: "settings/update", payload: { enableWhoisFallback: checked } });
     },
     [dispatch]
   );
@@ -191,17 +174,6 @@ export default function SettingsPage() {
             onChange={handleDnsConcurrencyChange}
           />
         </Box>
-
-        <FormGroup>
-          <FormControlLabel
-            control={<Switch checked={settings.useProxy} onChange={handleProxyToggle} />}
-            label={t("page.export.settings.proxy")}
-          />
-          <FormControlLabel
-            control={<Switch checked={settings.enableWhoisFallback} onChange={handleWhoisToggle} />}
-            label={t("page.export.settings.whois")}
-          />
-        </FormGroup>
 
       </Paper>
     </>

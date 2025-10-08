@@ -248,13 +248,9 @@ export default function RdapPage() {
               const baseRow = workingMap.get(candidate.id) ?? { ...candidate };
               try {
                 const rdapResult = await runRdapQueryWithRetry(candidate.ascii, {
-                  useProxy: settings.useProxy,
                   attempts: RDAP_RETRY_ATTEMPTS,
                   delayMs: RDAP_RETRY_DELAY_MS
                 });
-                if (rdapResult.unsupported && settings.enableWhoisFallback) {
-                  // TODO: integrate WHOIS fallback for unsupported TLDs
-                }
                 // 根据实际服务端拼接来源提示，便于排查不同 TLD 的 RDAP 服务
                 const dynamicSourceDetail = t("rdap.detail.source", {
                   source: rdapResult.serviceUrl
@@ -307,8 +303,6 @@ export default function RdapPage() {
       dispatch,
       enqueue,
       rows,
-      settings.enableWhoisFallback,
-      settings.useProxy,
       t
     ]
   );

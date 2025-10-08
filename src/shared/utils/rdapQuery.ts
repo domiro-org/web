@@ -4,12 +4,7 @@ import { delay } from "./async";
 
 const IANA_RDAP_BOOTSTRAP_ENDPOINT = "https://data.iana.org/rdap/dns.json";
 
-interface RdapQueryOptions {
-  /** 是否通过代理请求 RDAP */
-  useProxy?: boolean;
-}
-
-interface RdapRetryOptions extends RdapQueryOptions {
+interface RdapRetryOptions {
   /** 最大自动重试次数（包含首次调用） */
   attempts?: number;
   /** 每轮基础等待时间（毫秒），将按尝试次数线性递增 */
@@ -41,11 +36,8 @@ let rdapServiceIndexPromise: Promise<RdapServiceIndex> | null = null;
  * @param domain ASCII 形式的域名
  * @returns RDAP 查询结果结构
  */
-export async function runRdapQuery(
-  domain: string,
-  options?: RdapQueryOptions
-): Promise<RdapCheckResult> {
-  const candidates = await resolveEndpointCandidates(domain, options?.useProxy);
+export async function runRdapQuery(domain: string): Promise<RdapCheckResult> {
+  const candidates = await resolveEndpointCandidates(domain);
 
   if (candidates.length === 0) {
     return {
@@ -153,13 +145,13 @@ export async function runRdapQuery(
 /**
  * 在 RDAP 查询基础上增加自动重试逻辑，对 429/网络错误进行退避重试。
  * @param domain ASCII 域名
- * @param options 代理与重试配置
+ * @param options 重试配置
  */
 export async function runRdapQueryWithRetry(
   domain: string,
   options?: RdapRetryOptions
 ): Promise<RdapCheckResult> {
-  const { attempts: attemptOverride, delayMs: delayOverride, ...queryOptions } = options ?? {};
+  const { attempts: attemptOverride, delayMs: delayOverride } = options ?? {};
   const attempts = Math.max(attemptOverride ?? 3, 1);
   const baseDelay = Math.max(delayOverride ?? 1000, 0);
   let lastError: unknown;
@@ -167,7 +159,7 @@ export async function runRdapQueryWithRetry(
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const result = await runRdapQuery(domain, queryOptions);
+      const result = await runRdapQuery(domain);
       if (result.status === 429 && attempt < attempts) {
         lastResult = result;
         const retryAfterRaw = result.detailParams?.retryAfter;
@@ -229,10 +221,7 @@ function parseRetryAfter(value: string | null): number | undefined {
 /**
  * 根据设置决定 RDAP 请求的实际端点列表。
  */
-async function resolveEndpointCandidates(
-  domain: string,
-  useProxy?: boolean
-): Promise<RdapEndpointCandidate[]> {
+async function resolveEndpointCandidates(domain: string): Promise<RdapEndpointCandidate[]> {
   const tld = extractTld(domain);
   if (!tld) {
     return [];
@@ -243,21 +232,6 @@ async function resolveEndpointCandidates(
 
   if (!serviceUrls || serviceUrls.length === 0) {
     return [];
-  }
-
-  const serviceDisplay = formatServiceDisplay(serviceUrls[0] ?? "");
-
-  if (useProxy) {
-    const proxyBase = import.meta.env.VITE_API_PROXY;
-    if (proxyBase) {
-      const normalized = proxyBase.endsWith("/") ? proxyBase.slice(0, -1) : proxyBase;
-      return [
-        {
-          url: `${normalized}/rdap?domain=${encodeURIComponent(domain)}`,
-          serviceDisplay
-        }
-      ];
-    }
   }
 
   // 直接访问各个 RDAP 服务端点

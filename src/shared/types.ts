@@ -84,10 +84,6 @@ export interface AppSettings {
   dnsConcurrency: number;
   /** DoH 查询使用的提供者顺序 */
   dohProviders: DohProviderId[];
-  /** 是否通过代理中转网络请求 */
-  useProxy: boolean;
-  /** 是否对不支持 RDAP 的 TLD 启用 WHOIS 兜底 */
-  enableWhoisFallback: boolean;
 }
 
 /**
