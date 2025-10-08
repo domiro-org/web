@@ -162,14 +162,6 @@ export default function ExportPage() {
             <SidebarStat label={t("page.export.sidebar.savedAt")} value={lastSavedLabel} />
             <SidebarStat label={t("page.export.sidebar.totalDns")} value={dns.rows.length} />
             <SidebarStat label={t("page.export.sidebar.providers")} value={providerLabel} />
-            <SidebarStat
-              label={t("page.export.sidebar.proxy")}
-              value={
-                settings.useProxy
-                  ? t("page.export.sidebar.enabled")
-                  : t("page.export.sidebar.disabled")
-              }
-            />
           </Stack>
         </Paper>
         <Paper elevation={1} sx={{ p: 3 }}>
@@ -182,7 +174,7 @@ export default function ExportPage() {
         </Paper>
       </Stack>
     ),
-    [dns.rows.length, lastSavedLabel, providerLabel, settings.useProxy, t]
+    [dns.rows.length, lastSavedLabel, providerLabel, t]
   );
 
   useWideShellSidebar(sidebarContent);
