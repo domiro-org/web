@@ -151,6 +151,8 @@ export default function WideShell({ children }: PropsWithChildren) {
     </Box>
   );
 
+  const showMobileAppBar = !isLgUp;
+
   return (
     <WideShellContext.Provider value={contextValue}>
       <Box
@@ -160,19 +162,17 @@ export default function WideShell({ children }: PropsWithChildren) {
           bgcolor: "background.default"
         }}
       >
-        <AppBar
-          position="fixed"
-          color="default"
-          elevation={0}
-          sx={{
-            borderBottom: "1px solid",
-            borderColor: "divider",
-            width: { lg: `calc(100% - ${DRAWER_WIDTH}px)` },
-            ml: { lg: `${DRAWER_WIDTH}px` }
-          }}
-        >
-          <Toolbar sx={{ px: { xs: 2, md: 3 } }}>
-            {!isLgUp && (
+        {showMobileAppBar && (
+          <AppBar
+            position="fixed"
+            color="default"
+            elevation={0}
+            sx={{
+              borderBottom: "1px solid",
+              borderColor: "divider"
+            }}
+          >
+            <Toolbar sx={{ px: { xs: 2, md: 3 } }}>
               <IconButton
                 color="primary"
                 edge="start"
@@ -182,23 +182,9 @@ export default function WideShell({ children }: PropsWithChildren) {
               >
                 <MenuIcon />
               </IconButton>
-            )}
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }} noWrap>
-              {t("app.title")}
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 2,
-                  bgcolor: "action.hover",
-                  opacity: 0.6
-                }}
-              />
-            </Box>
-          </Toolbar>
-        </AppBar>
+            </Toolbar>
+          </AppBar>
+        )}
         <Box component="nav" sx={{ width: { lg: DRAWER_WIDTH }, flexShrink: { lg: 0 } }}>
           <Drawer
             variant={isLgUp ? "permanent" : "temporary"}
@@ -225,7 +211,7 @@ export default function WideShell({ children }: PropsWithChildren) {
             flexDirection: "column"
           }}
         >
-          <Toolbar />
+          {showMobileAppBar && <Toolbar />}
           <Container
             maxWidth="xl"
             sx={{
