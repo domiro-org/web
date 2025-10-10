@@ -71,6 +71,9 @@ export default function WideShell({ children }: PropsWithChildren) {
     [clearSidebar, setSidebar]
   );
 
+  // 当页面显式传入 false 时代表禁用右侧栏
+  const shouldShowSidebar = sidebarContent !== false;
+
   useEffect(() => {
     // 路径变化时先清理旧的侧栏，避免内容残留
     setSidebarContent(null);
@@ -227,7 +230,7 @@ export default function WideShell({ children }: PropsWithChildren) {
                 display: "grid",
                 gridTemplateColumns: {
                   xs: "minmax(0, 1fr)",
-                  lg: "minmax(0, 3fr) minmax(0, 1fr)"
+                  lg: shouldShowSidebar ? "minmax(0, 3fr) minmax(0, 1fr)" : "minmax(0, 1fr)"
                 },
                 alignItems: "flex-start",
                 gap: 3,
@@ -240,20 +243,22 @@ export default function WideShell({ children }: PropsWithChildren) {
                   {children}
                 </Box>
               </Box>
-              <Box sx={{ minHeight: 0 }}>
-                <Box
-                  // 右侧栏在大屏保持可见，贴合原型要求
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 3,
-                    position: { lg: "sticky" },
-                    top: { lg: "88px" }
-                  }}
-                >
-                  {sidebarContent ?? <DefaultSidebar />}
+              {shouldShowSidebar && (
+                <Box sx={{ minHeight: 0 }}>
+                  <Box
+                    // 右侧栏在大屏保持可见，贴合原型要求
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 3,
+                      position: { lg: "sticky" },
+                      top: { lg: "88px" }
+                    }}
+                  >
+                    {sidebarContent ?? <DefaultSidebar />}
+                  </Box>
                 </Box>
-              </Box>
+              )}
             </Box>
           </Container>
         </Box>

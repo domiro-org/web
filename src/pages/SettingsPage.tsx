@@ -40,7 +40,7 @@ export default function SettingsPage() {
   // 需至少保留一个 DoH 提供商
   const [providerError, setProviderError] = useState(false);
 
-  useWideShellSidebar(null);
+  useWideShellSidebar(false);
 
   // 处理 DoH 提供商勾选变更
   const handleProviderToggle = useCallback(
