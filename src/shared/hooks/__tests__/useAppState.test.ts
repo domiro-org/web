@@ -6,7 +6,7 @@ import {
   PERSIST_INPUT_PAYLOAD_THRESHOLD
 } from "../useAppState";
 
-import type { AppState } from "../../types";
+import { SESSION_STORAGE_KEY, type AppState } from "../../types";
 
 const baseInput: AppState["input"] = {
   domains: [],
@@ -14,18 +14,24 @@ const baseInput: AppState["input"] = {
 };
 
 describe("persistInput", () => {
-  beforeEach(() => {
-    const storage = {
-      setItem: vi.fn(),
-      getItem: vi.fn()
-    } satisfies Pick<Storage, "setItem" | "getItem">;
+  let storageMap: Map<string, string>;
 
-    vi.stubGlobal(
-      "window",
-      {
-        sessionStorage: storage
-      } as unknown as Window & typeof globalThis
-    );
+  beforeEach(() => {
+    storageMap = new Map();
+
+    const storage = {
+      setItem: vi.fn((key: string, value: string) => {
+        storageMap.set(key, value);
+      }),
+      getItem: vi.fn((key: string) => storageMap.get(key) ?? null),
+      removeItem: vi.fn((key: string) => {
+        storageMap.delete(key);
+      })
+    } satisfies Pick<Storage, "setItem" | "getItem" | "removeItem">;
+
+    vi.stubGlobal("window", {
+      sessionStorage: storage
+    } as unknown as Window & typeof globalThis);
   });
 
   afterEach(() => {
@@ -43,12 +49,17 @@ describe("persistInput", () => {
 
     persistInput({ ...baseInput, domains });
 
-    expect(window.sessionStorage.setItem).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.setItem).toHaveBeenCalledWith(
+      `${SESSION_STORAGE_KEY}:chunk:0`,
+      expect.stringContaining("example.com")
+    );
+    expect(window.sessionStorage.setItem).toHaveBeenCalledWith(
+      SESSION_STORAGE_KEY,
+      expect.stringContaining(`"version":2`)
+    );
   });
 
-  it("skips persisting when domain count exceeds threshold", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
+  it("splits payload into multiple chunks when domain count exceeds threshold", () => {
     const domains = Array.from({ length: PERSIST_INPUT_DOMAIN_THRESHOLD + 1 }, (_, index) => ({
       ascii: `example${index}.com`,
       display: `example${index}.com`
@@ -56,16 +67,19 @@ describe("persistInput", () => {
 
     persistInput({ ...baseInput, domains });
 
-    expect(window.sessionStorage.setItem).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
+    expect(window.sessionStorage.setItem).toHaveBeenCalledWith(
+      `${SESSION_STORAGE_KEY}:chunk:0`,
+      expect.any(String)
+    );
+    expect(window.sessionStorage.setItem).toHaveBeenCalledWith(
+      `${SESSION_STORAGE_KEY}:chunk:1`,
+      expect.any(String)
+    );
+    expect(window.sessionStorage.removeItem).not.toHaveBeenCalled();
   });
 
-  it("skips persisting when payload size exceeds threshold", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const bytesPerDomain = Math.ceil(
-      PERSIST_INPUT_PAYLOAD_THRESHOLD / 10
-    );
+  it("splits payload when serialized size exceeds threshold", () => {
+    const bytesPerDomain = Math.ceil(PERSIST_INPUT_PAYLOAD_THRESHOLD / 10);
     const largeLabel = "x".repeat(bytesPerDomain);
     const domains = Array.from({ length: 12 }, (_, index) => ({
       ascii: `${largeLabel}${index}.com`,
@@ -74,17 +88,23 @@ describe("persistInput", () => {
 
     persistInput({ ...baseInput, domains });
 
-    expect(window.sessionStorage.setItem).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
+    const chunkCalls = (window.sessionStorage.setItem as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([key]) => key !== SESSION_STORAGE_KEY
+    );
+
+    expect(chunkCalls.length).toBeGreaterThan(1);
   });
 
   it("handles QuotaExceededError gracefully", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    (window.sessionStorage.setItem as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => {
+    const setItemMock = window.sessionStorage.setItem as unknown as ReturnType<typeof vi.fn>;
+    setItemMock
+      .mockImplementationOnce(() => {
         throw new DOMException("Quota", "QuotaExceededError");
-      }
-    );
+      })
+      .mockImplementation((key: string, value: string) => {
+        storageMap.set(key, value);
+      });
 
     expect(() =>
       persistInput({
@@ -101,15 +121,30 @@ describe("persistInput", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("accepts extremely large domain lists by skipping persistence", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const domains = Array.from({ length: 100_000 }, (_, index) => ({
-      ascii: `bulk${index}.com`,
-      display: `bulk${index}.com`
-    }));
+  it("cleans up stale chunk entries when new chunk count is smaller", () => {
+    storageMap.set(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        version: 2,
+        updatedAt: baseInput.updatedAt,
+        totalCount: 20,
+        chunkCount: 2
+      })
+    );
+    storageMap.set(`${SESSION_STORAGE_KEY}:chunk:0`, JSON.stringify({ domains: [] }));
+    storageMap.set(`${SESSION_STORAGE_KEY}:chunk:1`, JSON.stringify({ domains: [] }));
 
-    expect(() => persistInput({ ...baseInput, domains })).not.toThrow();
-    expect(window.sessionStorage.setItem).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
+    const domains = [
+      {
+        ascii: "example.com",
+        display: "example.com"
+      }
+    ];
+
+    persistInput({ ...baseInput, domains });
+
+    expect(window.sessionStorage.removeItem).toHaveBeenCalledWith(
+      `${SESSION_STORAGE_KEY}:chunk:1`
+    );
   });
 });

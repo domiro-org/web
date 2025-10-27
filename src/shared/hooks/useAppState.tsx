@@ -58,14 +58,41 @@ const AppDispatchContext = createContext<Dispatch<AppAction>>(() => {
 });
 
 /**
- * 当域名数量超过阈值时不再尝试持久化，避免触发配额上限。
+ * 单个批次允许持久化的最大域名数量，用于控制切片粒度。
  */
 export const PERSIST_INPUT_DOMAIN_THRESHOLD = 50_000;
 
 /**
- * 当序列化后的长度接近 sessionStorage 配额时直接跳过写入。
+ * 单个批次允许持久化的最大字符串长度，尽量避免触发配额。
  */
 export const PERSIST_INPUT_PAYLOAD_THRESHOLD = 2.5 * 1024 * 1024;
+
+/**
+ * 批次数据在 sessionStorage 中的键名前缀。
+ */
+const PERSIST_INPUT_CHUNK_PREFIX = `${SESSION_STORAGE_KEY}:chunk:`;
+
+/**
+ * sessionStorage 元数据版本号，用于兼容历史结构。
+ */
+const PERSIST_INPUT_VERSION = 2;
+
+/**
+ * 描述批次持久化的元数据结构。
+ */
+interface PersistedInputMetadataV2 {
+  version: typeof PERSIST_INPUT_VERSION;
+  updatedAt: number;
+  totalCount: number;
+  chunkCount: number;
+}
+
+/**
+ * 描述批次数据的存储结构。
+ */
+interface PersistedInputChunk {
+  domains: DomainItem[];
+}
 
 /**
  * 将输入状态持久化到 sessionStorage，避免刷新丢失。
@@ -75,32 +102,48 @@ export function persistInput(value: AppState["input"]): void {
     return;
   }
 
-  const payload = JSON.stringify({
-    domains: value.domains,
-    updatedAt: value.updatedAt
-  });
+  const storage = window.sessionStorage;
+  const existingMetadata = storage.getItem(SESSION_STORAGE_KEY);
+  const previousChunkCount = getPersistedChunkCount(existingMetadata);
+  const chunkPayloads = buildInputChunks(value.domains);
 
-  const domainCount = value.domains.length;
-  const payloadLength = payload.length;
-
-  if (
-    domainCount > PERSIST_INPUT_DOMAIN_THRESHOLD ||
-    payloadLength > PERSIST_INPUT_PAYLOAD_THRESHOLD
-  ) {
-    // 输入过大时直接跳过，以免阻塞 UI 或触发白屏
-    console.warn(
-      "Skipped persisting input because payload exceeds safe threshold",
-      {
-        domainCount,
-        payloadLength
-      }
-    );
-    return;
-  }
+  const chunkBackups: Array<{ key: string; value: string | null }> = [];
 
   try {
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, payload);
+    chunkPayloads.forEach((payload, index) => {
+      const key = getChunkStorageKey(index);
+      const previousValue = storage.getItem(key);
+
+      chunkBackups.push({
+        key,
+        value: previousValue
+      });
+
+      storage.setItem(key, payload);
+    });
+
+    // 删除多余批次，避免旧数据占用空间
+    for (let index = chunkPayloads.length; index < previousChunkCount; index += 1) {
+      storage.removeItem(getChunkStorageKey(index));
+    }
+
+    const metadata: PersistedInputMetadataV2 = {
+      version: PERSIST_INPUT_VERSION,
+      updatedAt: value.updatedAt,
+      totalCount: value.domains.length,
+      chunkCount: chunkPayloads.length
+    };
+
+    storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(metadata));
   } catch (error) {
+    restoreChunksOnFailure(storage, chunkBackups);
+
+    if (existingMetadata !== null) {
+      storage.setItem(SESSION_STORAGE_KEY, existingMetadata);
+    } else {
+      storage.removeItem(SESSION_STORAGE_KEY);
+    }
+
     if (isQuotaExceededError(error)) {
       // 写入失败时提示用户数据未能保存，但不中断页面逻辑
       console.warn("Failed to persist input due to sessionStorage quota", error);
@@ -109,6 +152,97 @@ export function persistInput(value: AppState["input"]): void {
 
     throw error;
   }
+}
+
+/**
+ * 计算批次数据在 sessionStorage 中的键名。
+ */
+function getChunkStorageKey(index: number): string {
+  return `${PERSIST_INPUT_CHUNK_PREFIX}${index}`;
+}
+
+/**
+ * 根据当前域名列表切分批次，并转换成存储所需的 JSON 字符串。
+ */
+function buildInputChunks(domains: DomainItem[]): string[] {
+  const chunks = sliceDomains(domains);
+
+  return chunks.map((chunk) =>
+    JSON.stringify({
+      domains: chunk
+    } satisfies PersistedInputChunk)
+  );
+}
+
+/**
+ * 递归切分域名列表，保证每个批次满足阈值要求。
+ */
+function sliceDomains(domains: DomainItem[]): DomainItem[][] {
+  if (domains.length === 0) {
+    return [];
+  }
+
+  const serializedLength = JSON.stringify({ domains }).length;
+  const withinDomainLimit = domains.length <= PERSIST_INPUT_DOMAIN_THRESHOLD;
+  const withinPayloadLimit = serializedLength <= PERSIST_INPUT_PAYLOAD_THRESHOLD;
+
+  if (withinDomainLimit && withinPayloadLimit) {
+    return [domains];
+  }
+
+  if (domains.length === 1) {
+    // 单个域名仍超过阈值时无法继续拆分，只能直接返回
+    return [domains];
+  }
+
+  const pivot = Math.ceil(domains.length / 2);
+  const head = sliceDomains(domains.slice(0, pivot));
+  const tail = sliceDomains(domains.slice(pivot));
+
+  return [...head, ...tail];
+}
+
+/**
+ * 恢复写入失败前的批次数据，避免产生脏数据。
+ */
+function restoreChunksOnFailure(
+  storage: Storage,
+  backups: Array<{ key: string; value: string | null }>
+): void {
+  for (let index = backups.length - 1; index >= 0; index -= 1) {
+    const { key, value } = backups[index];
+
+    if (value === null) {
+      storage.removeItem(key);
+    } else {
+      try {
+        storage.setItem(key, value);
+      } catch {
+        // 还原失败时忽略异常，尽可能减少影响
+      }
+    }
+  }
+}
+
+/**
+ * 从元数据字符串中提取已有批次数量，用于清理无用数据。
+ */
+function getPersistedChunkCount(rawMetadata: string | null): number {
+  if (!rawMetadata) {
+    return 0;
+  }
+
+  try {
+    const metadata = JSON.parse(rawMetadata) as Partial<PersistedInputMetadataV2> | undefined;
+
+    if (metadata && metadata.version === PERSIST_INPUT_VERSION && metadata.chunkCount) {
+      return metadata.chunkCount;
+    }
+  } catch (error) {
+    console.warn("Failed to parse persisted input metadata", error);
+  }
+
+  return 0;
 }
 
 /**
@@ -146,22 +280,63 @@ function loadPersistedInput(): AppState["input"] | null {
   }
 
   try {
-    const data = JSON.parse(payload) as Partial<InputState> & {
-      value?: string;
-      parsed?: { domains?: Array<{ domain: string; ascii: string; tld?: string }> };
-    };
+    const data = JSON.parse(payload) as PersistedInputMetadataV2 |
+      (Partial<InputState> & {
+        value?: string;
+        parsed?: { domains?: Array<{ domain: string; ascii: string; tld?: string }> };
+      });
 
-    if (Array.isArray(data.domains)) {
+    if (isPersistedMetadataV2(data)) {
+      const restoredDomains: DomainItem[] = [];
+
+      for (let index = 0; index < data.chunkCount; index += 1) {
+        const chunkPayload = window.sessionStorage.getItem(getChunkStorageKey(index));
+        if (!chunkPayload) {
+          continue;
+        }
+
+        try {
+          const chunk = JSON.parse(chunkPayload) as Partial<PersistedInputChunk>;
+          if (!Array.isArray(chunk.domains)) {
+            continue;
+          }
+
+          restoredDomains.push(
+            ...chunk.domains
+              .map(normalizePersistedDomain)
+              .filter((item): item is DomainItem => Boolean(item))
+          );
+        } catch (error) {
+          console.warn("Failed to parse persisted input chunk", error);
+        }
+      }
+
       return {
-        domains: data.domains.map(normalizePersistedDomain).filter(Boolean) as DomainItem[],
+        domains: dedupeDomains(restoredDomains),
         updatedAt: data.updatedAt ?? 0
       } satisfies InputState;
     }
 
+    if (Array.isArray((data as Partial<InputState>).domains)) {
+      const legacy = data as Partial<InputState>;
+
+      return {
+        domains: legacy.domains!
+          .map(normalizePersistedDomain)
+          .filter((item): item is DomainItem => Boolean(item)),
+        updatedAt: legacy.updatedAt ?? 0
+      } satisfies InputState;
+    }
+
     // 兼容旧版存储结构
-    if (data.parsed?.domains) {
-      const fallbackDomains = data.parsed.domains
-        .map((item) =>
+    if ((data as { parsed?: { domains?: Array<{ domain: string; ascii: string; tld?: string }> } }).parsed?.domains) {
+      const legacyParsed = (data as {
+        parsed?: { domains?: Array<{ domain: string; ascii: string; tld?: string }> };
+        updatedAt?: number;
+      }).parsed;
+
+      const fallbackDomains = legacyParsed?.domains
+        ?.map((item) =>
           item?.ascii
             ? normalizePersistedDomain({
                 ascii: item.ascii,
@@ -172,16 +347,32 @@ function loadPersistedInput(): AppState["input"] | null {
         )
         .filter((item): item is DomainItem => Boolean(item));
 
-      return {
-        domains: dedupeDomains(fallbackDomains as DomainItem[]),
-        updatedAt: data.updatedAt ?? 0
-      } satisfies InputState;
+      if (fallbackDomains) {
+        return {
+          domains: dedupeDomains(fallbackDomains as DomainItem[]),
+          updatedAt:
+            (data as { updatedAt?: number }).updatedAt ?? 0
+        } satisfies InputState;
+      }
     }
   } catch (error) {
     console.warn("Failed to parse persisted input", error);
   }
 
   return null;
+}
+
+/**
+ * 判断是否属于新版批次持久化的元数据。
+ */
+function isPersistedMetadataV2(value: unknown): value is PersistedInputMetadataV2 {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<PersistedInputMetadataV2>;
+
+  return candidate.version === PERSIST_INPUT_VERSION && typeof candidate.chunkCount === "number";
 }
 
 /**
