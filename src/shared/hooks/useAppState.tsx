@@ -18,11 +18,19 @@ import {
   SESSION_STORAGE_KEY,
   SETTINGS_STORAGE_KEY
 } from "../types";
+import {
+  DEFAULT_CUSTOM_PRIMARY_COLOR,
+  DEFAULT_THEME_COLOR_ID,
+  isThemeColorId
+} from "../../theme/colorPresets";
 
 const defaultSettings: AppSettings = {
   rdapConcurrency: 3,
   dnsConcurrency: 1000,
-  dohProviders: ["google", "cloudflare"]
+  dohProviders: ["google", "cloudflare"],
+  themeMode: "system",
+  themeColor: DEFAULT_THEME_COLOR_ID,
+  customPrimaryColor: DEFAULT_CUSTOM_PRIMARY_COLOR
 };
 
 const defaultState: AppState = {
@@ -908,11 +916,20 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const dnsConcurrency = Number.isFinite(settings.dnsConcurrency)
     ? Math.min(Math.max(Math.trunc(settings.dnsConcurrency), 200), 5000)
     : defaultSettings.dnsConcurrency;
+  const themeMode =
+    settings.themeMode === "light" || settings.themeMode === "dark" || settings.themeMode === "system"
+      ? settings.themeMode
+      : defaultSettings.themeMode;
+  const themeColor = isThemeColorId(settings.themeColor) ? settings.themeColor : defaultSettings.themeColor;
+  const customPrimaryColor = normalizeCustomColor(settings.customPrimaryColor);
 
   return {
     rdapConcurrency,
     dnsConcurrency,
-    dohProviders: safeProviders
+    dohProviders: safeProviders,
+    themeMode,
+    themeColor,
+    customPrimaryColor
   } satisfies AppSettings;
 }
 
@@ -923,7 +940,28 @@ function areSettingsEqual(a: AppSettings, b: AppSettings): boolean {
   return (
     a.rdapConcurrency === b.rdapConcurrency &&
     a.dnsConcurrency === b.dnsConcurrency &&
+    a.themeMode === b.themeMode &&
+    a.themeColor === b.themeColor &&
+    a.customPrimaryColor === b.customPrimaryColor &&
     a.dohProviders.length === b.dohProviders.length &&
     a.dohProviders.every((provider, index) => provider === b.dohProviders[index])
   );
+}
+
+/**
+ * 归一化自定义主题色，保证写入格式统一。
+ * @param color 输入的颜色字符串
+ * @returns 正常化后的颜色值
+ */
+function normalizeCustomColor(color: string): string {
+  if (typeof color !== "string") {
+    return DEFAULT_CUSTOM_PRIMARY_COLOR;
+  }
+
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(color.trim());
+  if (!match) {
+    return DEFAULT_CUSTOM_PRIMARY_COLOR;
+  }
+
+  return `#${match[1].toUpperCase()}`;
 }

@@ -1,11 +1,15 @@
 import Alert from "@mui/material/Alert";
 import CssBaseline from "@mui/material/CssBaseline";
 import Snackbar from "@mui/material/Snackbar";
-import { useCallback } from "react";
+import { CssVarsProvider, useColorScheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useCallback, useEffect, useMemo, type PropsWithChildren } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AppStateProvider, useAppDispatch, useAppState } from "./shared/hooks/useAppState";
 import AppRoutes from "./routes/AppRoutes";
+import { createAppTheme } from "./theme/theme";
+import type { ThemeMode } from "./shared/types";
 
 /**
  * 顶层应用组件：注入状态、主题与路由。
@@ -13,10 +17,56 @@ import AppRoutes from "./routes/AppRoutes";
 export default function App() {
   return (
     <AppStateProvider>
-      <CssBaseline />
-      <AppWithSnackbar />
+      <AppThemeProvider>
+        <AppWithSnackbar />
+      </AppThemeProvider>
     </AppStateProvider>
   );
+}
+
+function AppThemeProvider({ children }: PropsWithChildren) {
+  const { settings } = useAppState();
+  const prefersDark = useMediaQuery("(prefers-color-scheme: dark)");
+
+  const theme = useMemo(
+    () =>
+      createAppTheme({
+        colorId: settings.themeColor,
+        customColor: settings.customPrimaryColor
+      }),
+    [settings.customPrimaryColor, settings.themeColor]
+  );
+
+  const targetMode = useMemo<Exclude<ThemeMode, "system">>(() => {
+    if (settings.themeMode === "system") {
+      return prefersDark ? "dark" : "light";
+    }
+    return settings.themeMode;
+  }, [prefersDark, settings.themeMode]);
+
+  return (
+    <CssVarsProvider theme={theme} defaultMode="system">
+      <CssBaseline enableColorScheme />
+      <ThemeModeSynchronizer mode={targetMode} />
+      {children}
+    </CssVarsProvider>
+  );
+}
+
+function ThemeModeSynchronizer({ mode }: { mode: Exclude<ThemeMode, "system"> }) {
+  const { setMode, mode: currentMode } = useColorScheme();
+
+  useEffect(() => {
+    if (!setMode) {
+      return;
+    }
+
+    if (currentMode !== mode) {
+      setMode(mode);
+    }
+  }, [currentMode, mode, setMode]);
+
+  return null;
 }
 
 function AppWithSnackbar() {

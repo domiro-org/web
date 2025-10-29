@@ -77,6 +77,10 @@ export type DohProviderId = "google" | "cloudflare";
 /**
  * 应用级运行配置。
  */
+export type ThemeMode = "system" | "light" | "dark";
+
+export type ThemeColorId = "blue" | "teal" | "green" | "purple" | "orange" | "pink" | "custom";
+
 export interface AppSettings {
   /** RDAP 查询最大并发数 */
   rdapConcurrency: number;
@@ -84,6 +88,12 @@ export interface AppSettings {
   dnsConcurrency: number;
   /** DoH 查询使用的提供者顺序 */
   dohProviders: DohProviderId[];
+  /** 主题模式（跟随系统 / 亮色 / 暗色） */
+  themeMode: ThemeMode;
+  /** 主题主色选项 */
+  themeColor: ThemeColorId;
+  /** 自定义主题色（在选择自定义时生效） */
+  customPrimaryColor: string;
 }
 
 /**
