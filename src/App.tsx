@@ -45,7 +45,11 @@ function AppThemeProvider({ children }: PropsWithChildren) {
   }, [prefersDark, settings.themeMode]);
 
   return (
-    <CssVarsProvider theme={theme} defaultMode="system">
+    <CssVarsProvider
+      theme={theme}
+      defaultMode="system"
+      modeStorageKey="domiro-mode"
+    >
       <CssBaseline enableColorScheme />
       <ThemeModeSynchronizer mode={targetMode} />
       {children}
@@ -61,6 +65,7 @@ function ThemeModeSynchronizer({ mode }: { mode: Exclude<ThemeMode, "system"> })
       return;
     }
 
+    // 监听设置变更，强制将 CssVarsProvider 切换到目标模式
     if (currentMode !== mode) {
       setMode(mode);
     }

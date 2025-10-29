@@ -63,6 +63,8 @@ export function createAppTheme(options: { colorId: ThemeColorId; customColor: st
 
   return extendTheme({
     cssVarPrefix: "md",
+    // 使用 data-attribute 承载当前配色，配合 setMode 手动切换
+    colorSchemeSelector: "data",
     shape: {
       borderRadius: 12
     },
