@@ -7,6 +7,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
+import Grid from "@mui/material/Grid";
 import Link from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -22,25 +23,6 @@ const REPO_URL = "https://github.com/domiro-org/web";
 export default function AboutPage() {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-
-  // 使用 useMemo 缓存状态提示列表，避免重复创建对象
-  const statusItems = useMemo(
-    () => [
-      {
-        icon: <CheckCircleOutlineRoundedIcon color="success" fontSize="small" />,
-        text: t("page.about.status.openSource")
-      },
-      {
-        icon: <InfoOutlinedIcon color="info" fontSize="small" />,
-        text: t("page.about.status.agpl")
-      },
-      {
-        icon: <HighlightOffRoundedIcon color="error" fontSize="small" />,
-        text: t("page.about.status.restriction")
-      }
-    ],
-    [t]
-  );
 
   // 预先构建许可条款分组，方便渲染
   const licenseSections = useMemo(
@@ -79,6 +61,7 @@ export default function AboutPage() {
     [t]
   );
 
+  // 使用响应式网格将许可信息分成三列展示，提升空间利用率
   return (
     <Stack spacing={3}>
       <Paper sx={{ p: 3 }}>
@@ -110,22 +93,6 @@ export default function AboutPage() {
 
       <Paper sx={{ p: 3 }}>
         <Stack spacing={2}>
-          <Typography variant="h6">{t("page.about.section.highlights")}</Typography>
-          <Stack spacing={1.5}>
-            {statusItems.map((item) => (
-              <Stack key={item.text} direction="row" spacing={1.5} alignItems="center">
-                {item.icon}
-                <Typography variant="body1" color="text.primary">
-                  {item.text}
-                </Typography>
-              </Stack>
-            ))}
-          </Stack>
-        </Stack>
-      </Paper>
-
-      <Paper sx={{ p: 3 }}>
-        <Stack spacing={2}>
           <Typography variant="h6">{t("page.about.license.heading")}</Typography>
           <Typography variant="body1" color="text.secondary">
             {t("page.about.license.summary")}
@@ -147,26 +114,27 @@ export default function AboutPage() {
               </Typography>
             </Collapse>
           </div>
-
-          <Stack spacing={2}>
+          <Grid container spacing={2}>
             {licenseSections.map((section) => (
-              <Stack key={section.title} spacing={1.5}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  {section.icon}
-                  <Typography variant="subtitle1" color="text.primary">
-                    {section.title}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.5} sx={{ pl: 4 }}>
-                  {section.items.map((item) => (
-                    <Typography key={item} variant="body2" color="text.primary">
-                      {item}
+              <Grid item xs={12} sm={6} md={4} key={section.title}>
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    {section.icon}
+                    <Typography variant="subtitle1" color="text.primary">
+                      {section.title}
                     </Typography>
-                  ))}
+                  </Stack>
+                  <Stack spacing={0.5} sx={{ pl: 4 }}>
+                    {section.items.map((item) => (
+                      <Typography key={item} variant="body2" color="text.primary">
+                        {item}
+                      </Typography>
+                    ))}
+                  </Stack>
                 </Stack>
-              </Stack>
+              </Grid>
             ))}
-          </Stack>
+          </Grid>
         </Stack>
       </Paper>
     </Stack>
