@@ -20,7 +20,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import LanguageSwitcher from "../components/LanguageSwitcher";
 import { WideShellContext, type WideShellContextValue } from "./WideShellContext";
 
 const DRAWER_WIDTH = 280;
@@ -201,11 +200,6 @@ export default function WideShell({ children }: PropsWithChildren) {
           ))}
         </List>
       </Stack>
-      {/* 语言选择固定在侧栏左下角：通过将其放在最底部并留出内边距实现 */}
-      <Divider />
-      <Box sx={{ px: 1.5, py: 2 }}>
-        <LanguageSwitcher fullWidth size="small" />
-      </Box>
     </Box>
   );
 
