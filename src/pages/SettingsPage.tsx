@@ -12,6 +12,7 @@ import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
 import type { ChangeEvent } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -220,8 +221,13 @@ export default function SettingsPage() {
                       py: 1.25,
                       borderWidth: isSelected ? 2 : 1,
                       borderColor: isSelected ? "primary.main" : "divider",
+                      // 选中态描边使用半透明主色，避免在不同主题下过亮或过暗
                       boxShadow: isSelected
-                        ? (theme) => `0 0 0 2px ${theme.palette.primary.container}`
+                        ? (theme) =>
+                            `0 0 0 2px ${alpha(
+                              theme.palette.primary.main,
+                              theme.palette.mode === "light" ? 0.24 : 0.32
+                            )}`
                         : "none",
                       transition: (theme) =>
                         theme.transitions.create(["border-color", "box-shadow"], {

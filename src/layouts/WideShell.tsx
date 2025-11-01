@@ -14,7 +14,7 @@ import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import type { PropsWithChildren, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
@@ -110,10 +110,36 @@ export default function WideShell({ children }: PropsWithChildren) {
                 sx={{
                   borderRadius: 2,
                   px: 2,
-                  "&.Mui-selected": {
-                    bgcolor: "primary.container",
-                    color: "primary.onContainer"
-                  }
+                  // 通过降低透明度让选中态在明暗模式下保持合适对比度
+                  transition: (theme) =>
+                    theme.transitions.create("background-color", {
+                      duration: theme.transitions.duration.shorter
+                    }),
+                  "&:hover": (theme) => ({
+                    bgcolor: alpha(
+                      theme.palette.primary.main,
+                      theme.palette.mode === "light" ? 0.08 : 0.16
+                    )
+                  }),
+                  "&.Mui-selected": (theme) => ({
+                    bgcolor: alpha(
+                      theme.palette.primary.main,
+                      theme.palette.mode === "light" ? 0.16 : 0.24
+                    ),
+                    color:
+                      theme.palette.mode === "light"
+                        ? theme.palette.primary.main
+                        : theme.palette.primary.contrastText,
+                    "& .MuiListItemText-primary": {
+                      fontWeight: 600
+                    },
+                    "&:hover": {
+                      bgcolor: alpha(
+                        theme.palette.primary.main,
+                        theme.palette.mode === "light" ? 0.2 : 0.28
+                      )
+                    }
+                  })
                 }}
               >
                 <ListItemText primary={t(item.labelKey)} />
@@ -134,10 +160,36 @@ export default function WideShell({ children }: PropsWithChildren) {
                 sx={{
                   borderRadius: 2,
                   px: 2,
-                  "&.Mui-selected": {
-                    bgcolor: "primary.container",
-                    color: "primary.onContainer"
-                  }
+                  // 通过降低透明度让选中态在明暗模式下保持合适对比度
+                  transition: (theme) =>
+                    theme.transitions.create("background-color", {
+                      duration: theme.transitions.duration.shorter
+                    }),
+                  "&:hover": (theme) => ({
+                    bgcolor: alpha(
+                      theme.palette.primary.main,
+                      theme.palette.mode === "light" ? 0.08 : 0.16
+                    )
+                  }),
+                  "&.Mui-selected": (theme) => ({
+                    bgcolor: alpha(
+                      theme.palette.primary.main,
+                      theme.palette.mode === "light" ? 0.16 : 0.24
+                    ),
+                    color:
+                      theme.palette.mode === "light"
+                        ? theme.palette.primary.main
+                        : theme.palette.primary.contrastText,
+                    "& .MuiListItemText-primary": {
+                      fontWeight: 600
+                    },
+                    "&:hover": {
+                      bgcolor: alpha(
+                        theme.palette.primary.main,
+                        theme.palette.mode === "light" ? 0.2 : 0.28
+                      )
+                    }
+                  })
                 }}
               >
                 <ListItemText primary={t(item.labelKey)} />
