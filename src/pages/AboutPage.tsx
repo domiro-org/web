@@ -7,7 +7,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
-import Grid from "@mui/material/GridLegacy";
+import Grid2 from "@mui/material/PigmentGrid"; // 使用 Grid2（PigmentGrid）替代旧版 GridLegacy
 import Link from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -114,9 +114,9 @@ export default function AboutPage() {
               </Typography>
             </Collapse>
           </div>
-          <Grid container spacing={2}>
+          <Grid2 container spacing={2}>
             {licenseSections.map((section) => (
-              <Grid xs={12} sm={6} md={4} key={section.title}>
+              <Grid2 size={{ xs: 12, sm: 6, md: 4 }} key={section.title}>
                 <Stack spacing={1.5}>
                   <Stack direction="row" spacing={1} alignItems="center">
                     {section.icon}
@@ -132,9 +132,9 @@ export default function AboutPage() {
                     ))}
                   </Stack>
                 </Stack>
-              </Grid>
+              </Grid2>
             ))}
-          </Grid>
+          </Grid2>
         </Stack>
       </Paper>
     </Stack>
