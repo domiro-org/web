@@ -209,6 +209,8 @@
   "page.export.snackbar.state": "会话快照已导出。",
   "page.settings.title": "参数配置",
   "page.settings.description": "调整 Domiro 的查询策略与运行参数。",
+  "page.settings.language.title": "界面语言",
+  "page.settings.language.description": "切换系统语言，导航与提示等界面文本将实时更新。",
   "page.settings.theme.title": "界面主题",
   "page.settings.theme.description": "切换亮色/暗色模式，并挑选符合 Material Design 3 的主题色。",
   "page.settings.theme.modeLabel": "配色模式",

@@ -186,6 +186,8 @@
   "page.export.snackbar.state": "Session snapshot exported.",
   "page.settings.title": "Configuration",
   "page.settings.description": "Adjust Domiro runtime parameters and query strategy.",
+  "page.settings.language.title": "Interface language",
+  "page.settings.language.description": "Switch the application language; navigation, tips, and interface text update instantly.",
   "page.settings.theme.title": "Theme",
   "page.settings.theme.description": "Switch between light and dark appearances and pick Material 3 accent colors.",
   "page.settings.theme.modeLabel": "Color scheme",

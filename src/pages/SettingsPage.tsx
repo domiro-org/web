@@ -17,6 +17,7 @@ import type { ChangeEvent } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useWideShellSidebar } from "../layouts/WideShellContext";
 import { useAppDispatch, useAppState } from "../shared/hooks/useAppState";
 import type { DohProviderId, ThemeColorId, ThemeMode } from "../shared/types";
@@ -140,6 +141,25 @@ export default function SettingsPage() {
             {t("page.settings.description")}
           </Typography>
         </Stack>
+      </Paper>
+
+      <Paper
+        elevation={1}
+        sx={{
+          p: 3,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2
+        }}
+      >
+        <Stack spacing={1}>
+          <Typography variant="h6">{t("page.settings.language.title")}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t("page.settings.language.description")}
+          </Typography>
+        </Stack>
+        {/* 语言切换控制 - 统一入口，避免分散在侧栏 */}
+        <LanguageSwitcher size="small" sx={{ width: { xs: "100%", sm: 240 } }} />
       </Paper>
 
       <Paper
