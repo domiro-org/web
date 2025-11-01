@@ -105,7 +105,7 @@ export default function AboutPage() {
 
           <Grid container spacing={2}>
             {licenseColumns.map((column) => (
-              <Grid key={column.title} item xs={12} md={4}>
+              <Grid key={column.title} size={{ xs: 12, md: 4 }}>
                 <Stack spacing={1.5}>
                   <Stack direction="row" alignItems="center" spacing={1}>
                     {column.icon}
