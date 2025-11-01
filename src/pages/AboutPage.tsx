@@ -7,7 +7,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
-import Grid2 from "@mui/material/PigmentGrid"; // 使用 Grid2（PigmentGrid）替代旧版 GridLegacy
+import Grid2 from "@mui/material/PigmentGrid"; // 使用 Grid2 Pigment 版本以满足新版 API
 import Link from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
