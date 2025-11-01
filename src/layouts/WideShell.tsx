@@ -54,7 +54,10 @@ export default function WideShell({ children }: PropsWithChildren) {
   );
 
   const settingsItems = useMemo<NavigationItem[]>(
-    () => [{ to: "/settings", labelKey: "nav.settings", exact: true }],
+    () => [
+      { to: "/settings", labelKey: "nav.settings", exact: true },
+      { to: "/about", labelKey: "nav.about", exact: true }
+    ],
     []
   );
 

@@ -15,6 +15,7 @@ const DnsPage = lazy(() => import("../pages/DnsPage"));
 const RdapPage = lazy(() => import("../pages/RdapPage"));
 const ExportPage = lazy(() => import("../pages/ExportPage"));
 const SettingsPage = lazy(() => import("../pages/SettingsPage"));
+const AboutPage = lazy(() => import("../pages/AboutPage"));
 
 /**
  * 全局路由定义，启用按需加载页面级组件。
@@ -29,7 +30,8 @@ const router = createBrowserRouter([
       { path: "dns", element: <DnsPage /> },
       { path: "rdap", element: <RdapPage /> },
       { path: "export", element: <ExportPage /> },
-      { path: "settings", element: <SettingsPage /> }
+      { path: "settings", element: <SettingsPage /> },
+      { path: "about", element: <AboutPage /> }
     ]
   }
 ]);
