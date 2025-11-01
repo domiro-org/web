@@ -1,9 +1,5 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
-import CssBaseline from "@mui/material/CssBaseline";
-import { CssVarsProvider } from "@mui/material/styles";
-
-import theme from "./theme/theme";
 import { injectUmamiScript } from "./shared/utils/umami";
 
 import App from "./App";
@@ -18,9 +14,6 @@ if (shouldInjectUmami && import.meta.env.UMAMI_SRC && import.meta.env.UMAMI_SITE
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <CssVarsProvider theme={theme}>
-      <CssBaseline enableColorScheme />
-      <App />
-    </CssVarsProvider>
+    <App />
   </StrictMode>
 );
