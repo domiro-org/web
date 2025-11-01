@@ -41,29 +41,7 @@ en-US/common.json
 - 变量用 `{{var}}` 占位符（例：`"welcome": "欢迎，{{name}}"`）
 - **新增语言**：通过 Weblate 平台生成文件，不手工复制
 
----
-
-## 3. DNS & RDAP 查询逻辑规范
-
-- **DNS 查询**：
-- 使用 DoH (DNS over HTTPS)，默认优先 Google 和 Cloudflare
-- 查询记录类型：`NS`（必要时 `SOA`）
-- 结果语义：
-  - `has-ns` → 已委派 → 可能已注册
-  - `no-ns`/`nxdomain` → 疑似未注册 → 需 RDAP 校验
-- **RDAP 查询**：
-- 默认请求 gTLD 的 RDAP 服务（通过 IANA bootstrap 或直接调用常见注册商）
-- 结果语义：
-  - `404` → 未注册
-  - `200` → 已注册
-  - `429` → 遵守 `Retry-After`，指数退避
-- **WHOIS 兜底**：
-- 仅对无 RDAP 的 ccTLD 使用
-- 通过代理请求，不在浏览器直接调用 43 端口
-
----
-
-## 4. UI 与交互规范
+## 3. UI 与交互规范
 
 - **主题**：启用 MUI `CssVarsProvider`，使用 MD3 色板和圆角
 - **界面元素**：
@@ -77,7 +55,7 @@ en-US/common.json
 
 ---
 
-## 5. 代理行为规范 (对 Codex 的指引)
+## 4. 代理行为规范 (对 Codex 的指引)
 
 - 生成代码时：
 - **必须遵守上述规范**
